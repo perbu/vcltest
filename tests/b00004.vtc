@@ -1,0 +1,52 @@
+varnishtest "Multiple subroutines test"
+
+# Test VCL with multiple custom subroutines
+
+server s1 {
+    rxreq
+    txresp -status 200 -body "OK"
+} -start
+
+varnish v1 -vcl {
+    vcl 4.1;
+
+    import std;
+
+    backend default {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    sub vcl_recv {
+        call check_auth;
+        return (pass);
+    }
+
+    sub check_auth {
+        if (req.http.Authorization) {
+            # Auth present
+            std.log("auth:present");
+        } else {
+            # No auth
+            std.log("auth:missing");
+        }
+    }
+
+    sub vcl_deliver {
+        set resp.http.X-VCL-Version = "4.1";
+        return (deliver);
+    }
+} -start
+
+client c1 {
+    txreq -url "/test" -hdr "Authorization: Bearer token123"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-VCL-Version == "4.1"
+} -run
+
+client c2 {
+    txreq -url "/test"
+    rxresp
+    expect resp.status == 200
+} -run

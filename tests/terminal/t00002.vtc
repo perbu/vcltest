@@ -1,0 +1,45 @@
+varnishtest "Interactive varnish CLI test" -cli
+
+# This test requires terminal/CLI interaction
+# Tests varnish management commands
+
+varnish v1 -vcl {
+    vcl 4.1;
+
+    import std;
+
+    backend default {
+        .host = "127.0.0.1";
+        .port = "8080";
+    }
+
+    sub vcl_recv {
+        return (synth(200, "OK"));
+    }
+} -start
+
+# Test CLI commands that might require terminal
+varnish v1 -cli "vcl.list"
+varnish v1 -cli "backend.list"
+varnish v1 -cli "param.show"
+varnish v1 -cli "ping"
+
+# Verify VCL can be reloaded
+varnish v1 -vcl {
+    vcl 4.1;
+
+    backend default {
+        .host = "127.0.0.1";
+        .port = "9090";
+    }
+
+    sub vcl_recv {
+        return (synth(201, "Updated"));
+    }
+}
+
+client c1 {
+    txreq
+    rxresp
+    expect resp.status == 201
+} -run

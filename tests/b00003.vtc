@@ -1,0 +1,51 @@
+varnishtest "VCL synth response test"
+
+# Test that synthetic responses work correctly
+
+varnish v1 -vcl {
+    vcl 4.1;
+
+    import std;
+
+    backend default {
+        .host = "127.0.0.1";
+        .port = "8080";
+    }
+
+    sub vcl_recv {
+        if (req.url == "/redirect") {
+            return (synth(301, "Moved"));
+        }
+        if (req.url == "/forbidden") {
+            return (synth(403, "Forbidden"));
+        }
+        return (synth(404, "Not Found"));
+    }
+
+    sub vcl_synth {
+        if (resp.status == 301) {
+            set resp.http.Location = "/new-location";
+        }
+        set resp.http.Content-Type = "text/plain";
+        return (deliver);
+    }
+} -start
+
+client c1 {
+    txreq -url "/redirect"
+    rxresp
+    expect resp.status == 301
+    expect resp.http.Location == "/new-location"
+} -run
+
+client c2 {
+    txreq -url "/forbidden"
+    rxresp
+    expect resp.status == 403
+} -run
+
+client c3 {
+    txreq -url "/unknown"
+    rxresp
+    expect resp.status == 404
+} -run

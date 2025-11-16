@@ -1,11 +1,11 @@
 package instrument
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
-
-	"github.com/perbu/vclparser"
 )
 
 // Config holds configuration for VCL instrumentation
@@ -16,10 +16,10 @@ type Config struct {
 
 // Result contains the instrumented VCL and metadata
 type Result struct {
-	VCL       string            // Instrumented VCL code
-	LineMap   map[int]int       // Maps instrumented line to original line
-	VCLSource []string          // Original VCL source lines
-	Executed  map[int]bool      // Tracks which lines were executed (for output)
+	VCL       string       // Instrumented VCL code
+	LineMap   map[int]int  // Maps instrumented line to original line
+	VCLSource []string     // Original VCL source lines
+	Executed  map[int]bool // Tracks which lines were executed (for output)
 }
 
 // Instrument reads a VCL file, instruments it with trace logs, and replaces backends
@@ -30,113 +30,136 @@ func Instrument(config Config) (*Result, error) {
 		return nil, fmt.Errorf("failed to read VCL file: %w", err)
 	}
 
-	// Parse VCL
-	vcl, err := vclparser.Parse(string(vclContent))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse VCL: %w", err)
-	}
-
 	// Store original source lines
 	vclSource := strings.Split(string(vclContent), "\n")
 
-	// Build instrumented VCL
-	var instrumented strings.Builder
-
-	// Add std import if not present
-	hasStdImport := false
-	for _, stmt := range vcl.Statements {
-		if imp, ok := stmt.(*vclparser.Import); ok && imp.Name == "std" {
-			hasStdImport = true
-			break
-		}
-	}
-
-	if !hasStdImport {
-		instrumented.WriteString("import std;\n\n")
-	}
-
-	// Track line mappings (for now, simplified - we'll improve this later)
-	lineMap := make(map[int]int)
-
-	// Process statements
-	for _, stmt := range vcl.Statements {
-		switch s := stmt.(type) {
-		case *vclparser.Backend:
-			// Replace backend with mock address
-			instrumentedBackend := instrumentBackend(s, config.BackendAddress)
-			instrumented.WriteString(instrumentedBackend)
-			instrumented.WriteString("\n")
-		case *vclparser.Subroutine:
-			// Instrument subroutine
-			instrumentedSub := instrumentSubroutine(s)
-			instrumented.WriteString(instrumentedSub)
-			instrumented.WriteString("\n")
-		case *vclparser.Import:
-			// Keep import as-is
-			instrumented.WriteString(fmt.Sprintf("import %s;\n", s.Name))
-		case *vclparser.ACL:
-			// Keep ACL as-is
-			instrumented.WriteString(s.String())
-			instrumented.WriteString("\n")
-		default:
-			// Keep other statements as-is
-			instrumented.WriteString(s.String())
-			instrumented.WriteString("\n")
-		}
-	}
+	// Instrument the VCL
+	instrumented := instrumentVCL(string(vclContent), config.BackendAddress)
 
 	return &Result{
-		VCL:       instrumented.String(),
-		LineMap:   lineMap,
+		VCL:       instrumented,
+		LineMap:   make(map[int]int), // Simplified: 1:1 mapping
 		VCLSource: vclSource,
 		Executed:  make(map[int]bool),
 	}, nil
 }
 
-// instrumentBackend replaces backend definition with mock address
-func instrumentBackend(backend *vclparser.Backend, mockAddress string) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("backend %s {\n", backend.Name))
+// instrumentVCL performs simple regex-based instrumentation
+func instrumentVCL(vcl string, backendAddr string) string {
+	var result strings.Builder
+	scanner := bufio.NewScanner(strings.NewReader(vcl))
 
-	// Split address into host and port
-	parts := strings.Split(mockAddress, ":")
-	if len(parts) == 2 {
-		b.WriteString(fmt.Sprintf("  .host = \"%s\";\n", parts[0]))
-		b.WriteString(fmt.Sprintf("  .port = \"%s\";\n", parts[1]))
-	} else {
-		b.WriteString(fmt.Sprintf("  .host = \"%s\";\n", mockAddress))
-		b.WriteString("  .port = \"8080\";\n")
-	}
+	lineNum := 0
+	currentSub := ""
+	inSub := false
+	hasStdImport := strings.Contains(vcl, "import std")
 
-	b.WriteString("}")
-	return b.String()
-}
+	// Regular expressions
+	subStartRe := regexp.MustCompile(`^sub\s+(\w+)\s*\{`)
+	subEndRe := regexp.MustCompile(`^\s*\}`)
+	backendStartRe := regexp.MustCompile(`^backend\s+(\w+)\s*\{`)
+	backendHostRe := regexp.MustCompile(`^\s*\.host\s*=\s*"[^"]*"\s*;`)
+	backendPortRe := regexp.MustCompile(`^\s*\.port\s*=\s*"[^"]*"\s*;`)
+	emptyLineRe := regexp.MustCompile(`^\s*$`)
+	commentRe := regexp.MustCompile(`^\s*#`)
+	vclVersionRe := regexp.MustCompile(`^vcl\s+[\d.]+\s*;`)
 
-// instrumentSubroutine adds trace logging to subroutine
-func instrumentSubroutine(sub *vclparser.Subroutine) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("sub %s {\n", sub.Name))
+	// Add std import after vcl version if not present
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
 
-	// Add initial trace
-	if sub.Line > 0 {
-		b.WriteString(fmt.Sprintf("  std.log(\"TRACE:%d:%s\");\n", sub.Line, sub.Name))
-	}
-
-	// Process statements (simplified for now - proper AST walking would be better)
-	for _, stmt := range sub.Statements {
-		b.WriteString("  ")
-
-		// Add trace before statement
-		if stmt.GetLine() > 0 {
-			b.WriteString(fmt.Sprintf("std.log(\"TRACE:%d:%s\"); ", stmt.GetLine(), sub.Name))
+		// Write VCL version line
+		if vclVersionRe.MatchString(line) {
+			result.WriteString(line)
+			result.WriteString("\n")
+			if !hasStdImport {
+				result.WriteString("\nimport std;\n")
+			}
+			continue
 		}
 
-		b.WriteString(stmt.String())
-		b.WriteString("\n")
+		// Skip import std if we already added it
+		if strings.Contains(line, "import std") && !hasStdImport {
+			continue
+		}
+
+		// Handle backend definitions
+		if match := backendStartRe.FindStringSubmatch(line); match != nil {
+			result.WriteString(line)
+			result.WriteString("\n")
+
+			// Replace backend host and port
+			parts := strings.Split(backendAddr, ":")
+			host := parts[0]
+			port := "8080"
+			if len(parts) > 1 {
+				port = parts[1]
+			}
+
+			// Read until end of backend block
+			for scanner.Scan() {
+				lineNum++
+				backendLine := scanner.Text()
+
+				if backendHostRe.MatchString(backendLine) {
+					result.WriteString(fmt.Sprintf("    .host = \"%s\";\n", host))
+				} else if backendPortRe.MatchString(backendLine) {
+					result.WriteString(fmt.Sprintf("    .port = \"%s\";\n", port))
+				} else {
+					result.WriteString(backendLine)
+					result.WriteString("\n")
+					if strings.TrimSpace(backendLine) == "}" {
+						break
+					}
+				}
+			}
+			continue
+		}
+
+		// Handle subroutine start
+		if match := subStartRe.FindStringSubmatch(line); match != nil {
+			currentSub = match[1]
+			inSub = true
+			result.WriteString(line)
+			result.WriteString("\n")
+			continue
+		}
+
+		// Handle subroutine end
+		if inSub && subEndRe.MatchString(line) {
+			inSub = false
+			currentSub = ""
+			result.WriteString(line)
+			result.WriteString("\n")
+			continue
+		}
+
+		// Instrument statements inside subroutines
+		if inSub && !emptyLineRe.MatchString(line) && !commentRe.MatchString(line) {
+			indent := getIndent(line)
+			// Add trace before the statement
+			result.WriteString(fmt.Sprintf("%sstd.log(\"TRACE:%d:%s\");\n", indent, lineNum, currentSub))
+			result.WriteString(line)
+			result.WriteString("\n")
+		} else {
+			// Write line as-is
+			result.WriteString(line)
+			result.WriteString("\n")
+		}
 	}
 
-	b.WriteString("}")
-	return b.String()
+	return result.String()
+}
+
+// getIndent returns the leading whitespace of a line
+func getIndent(line string) string {
+	for i, ch := range line {
+		if ch != ' ' && ch != '\t' {
+			return line[:i]
+		}
+	}
+	return line
 }
 
 // MarkExecuted marks a line as executed based on trace output

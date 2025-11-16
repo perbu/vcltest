@@ -277,6 +277,7 @@ VCLTest consists of several components:
 
 ### Running Tests
 
+#### Unit Tests (Go)
 ```bash
 # Run all unit tests
 go test ./...
@@ -287,6 +288,22 @@ go test -cover ./...
 # Run specific package tests
 go test ./pkg/testspec
 ```
+
+#### VTC Tests (Varnish Test Cases)
+```bash
+# Run all basic VTC tests (requires Varnish installed)
+./run-vtc-tests.sh
+
+# Run individual VTC test
+varnishtest tests/b00001.vtc
+
+# Run with verbose output
+varnishtest -v tests/b00001.vtc
+```
+
+The `tests/` directory contains VTC files that test VCLTest's compatibility with Varnish and VTest2. See `tests/README.md` for details.
+
+**Note**: VTC tests require Varnish to be installed. If Varnish is not available, tests can still be reviewed for syntax but cannot be executed.
 
 ### Project Structure
 
@@ -301,8 +318,20 @@ vcltest/
 │   ├── runner/           # Test execution
 │   └── assertion/        # Assertion evaluation
 ├── examples/             # Example tests
+├── tests/                # VTC test suite
+│   ├── b*.vtc            # Basic VTC tests
+│   └── terminal/         # Terminal-specific tests
+├── LIMITATIONS.md        # Known issues and limitations
 └── README.md
 ```
+
+### Known Limitations
+
+See `LIMITATIONS.md` for detailed information about current limitations and known issues, including:
+- VCL parser dependency workaround
+- Instrumentation edge cases
+- Platform support
+- Performance considerations
 
 ## Roadmap
 

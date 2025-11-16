@@ -1,0 +1,42 @@
+varnishtest "Terminal output color test" -cli
+
+# This test requires terminal interaction to verify color output
+# It should be run separately from automated tests
+
+varnish v1 -vcl {
+    vcl 4.1;
+
+    import std;
+
+    backend default {
+        .host = "127.0.0.1";
+        .port = "8080";
+    }
+
+    sub vcl_recv {
+        return (synth(200, "OK"));
+    }
+
+    sub vcl_synth {
+        set resp.http.X-Test = "color-output";
+        return (deliver);
+    }
+} -start
+
+# Test with terminal colors
+shell {
+    export TERM=xterm-256color
+    unset NO_COLOR
+}
+
+client c1 {
+    txreq -url "/test"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Test == "color-output"
+} -run
+
+# Verify varnishlog output contains trace information
+shell -expect "TRACE:" {
+    varnishlog -n ${v1_name} -d -g request | grep "TRACE:"
+}

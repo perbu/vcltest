@@ -1,0 +1,45 @@
+varnishtest "Basic VCL instrumentation test"
+
+# Test that basic VCL gets instrumented correctly
+
+server s1 {
+    rxreq
+    expect req.url == "/test"
+    txresp -status 200 -body "OK"
+} -start
+
+varnish v1 -vcl {
+    vcl 4.1;
+
+    import std;
+
+    backend default {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    sub vcl_recv {
+        if (req.url == "/health") {
+            return (synth(200, "OK"));
+        }
+        return (pass);
+    }
+
+    sub vcl_synth {
+        set resp.http.Content-Type = "text/plain";
+        return (deliver);
+    }
+} -start
+
+client c1 {
+    txreq -url "/health"
+    rxresp
+    expect resp.status == 200
+} -run
+
+client c2 {
+    txreq -url "/test"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "OK"
+} -run

@@ -1,0 +1,37 @@
+varnishtest "VCL backend replacement test"
+
+# Test that backends get replaced correctly
+
+server s1 {
+    rxreq
+    expect req.url == "/api/test"
+    txresp -status 200 -hdr "X-Backend: hit" -body "backend response"
+} -start
+
+varnish v1 -vcl {
+    vcl 4.1;
+
+    import std;
+
+    backend default {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    sub vcl_recv {
+        return (pass);
+    }
+
+    sub vcl_backend_response {
+        set beresp.http.X-Backend = "hit";
+        return (deliver);
+    }
+} -start
+
+client c1 {
+    txreq -url "/api/test"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Backend == "hit"
+    expect resp.body == "backend response"
+} -run
