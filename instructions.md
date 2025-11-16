@@ -10,6 +10,85 @@ a test framework that allows developers to:
 3. Execute tests against a real Varnish instance
 4. Verify both behavior and execution flow
 
+# How This Differs from VTest2
+
+**VTest2 operates at the HTTP protocol level** - it's excellent for testing Varnish behavior from an HTTP
+client/server perspective, but it's **too low-level for testing VCL logic**.
+
+## VTest2 Limitations for VCL Testing
+
+VTest2 focuses on:
+- Raw HTTP protocol interactions (bytes on the wire)
+- Varnish internals and edge cases at the C level
+- Low-level cache behavior and state transitions
+- Protocol conformance and HTTP semantics
+
+**What VTest2 cannot easily do:**
+1. **Verify VCL execution paths** - You can't easily confirm which branches of your VCL logic were executed
+2. **Inspect VCL variable states** - Hard to verify that `req.http.X-Custom` was set to the right value at the right time
+3. **Debug VCL flow** - When a test fails, you don't get a trace showing which subroutines ran and in what order
+4. **Test VCL logic in isolation** - VTest2 tests the entire Varnish stack, making it hard to pinpoint VCL-specific issues
+
+## This Tool's VCL-First Approach
+
+This tool is **purpose-built for testing VCL logic and execution**:
+
+1. **VCL-Level Observability**: Automatically instruments your VCL to trace execution through subroutines,
+   conditionals, and variable assignments
+
+2. **Logic-Focused Assertions**: Assert on VCL behavior like "this conditional branch was taken" or
+   "this variable was set to this value" - not just HTTP responses
+
+3. **Clear VCL Debugging**: When tests fail, see exactly which path your VCL took, which conditionals
+   matched, and where variables were modified
+
+4. **Declarative Test Format**: Write simple JSON test specifications focused on VCL behavior, not
+   low-level protocol details
+
+**Example contrast:**
+
+VTest2 test:
+```
+client c1 {
+    txreq -url "/api/users"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+} -run
+```
+*What happened inside VCL? We don't know.*
+
+This tool's test:
+```json
+{
+  "request": {"url": "/api/users"},
+  "expect": {
+    "status": 200,
+    "vcl_path": ["vcl_recv", "vcl_hash", "vcl_miss", "vcl_deliver"],
+    "vcl_returned": {"vcl_recv": "hash"},
+    "vcl_variable_set": {"req.backend_hint": "api_backend"}
+  }
+}
+```
+*We verify not just the response, but the entire VCL execution flow.*
+
+## When to Use Each Tool
+
+**Use VTest2 when:**
+- Testing Varnish core functionality and edge cases
+- Verifying HTTP protocol compliance
+- Testing complex client/server interaction scenarios
+- Debugging low-level Varnish behavior
+
+**Use this tool when:**
+- Developing and testing your VCL configuration
+- Debugging why your VCL logic isn't working as expected
+- Verifying complex conditional logic and routing rules
+- Ensuring VCL changes don't break expected behavior
+- Testing VCL in a CI/CD pipeline
+
+**Both tools are complementary** - VTest2 for Varnish internals, this tool for your VCL logic.
+
 # High-Level Architecture
 
 The application will do the following:
@@ -53,61 +132,100 @@ Then for each test specification we do the following:
 
 This raises quite a few questions, which we'll address below.
 
-# VCL Parsing Challenges
+# VCL Parsing with vclparser
 
-VCL has unique syntax that requires careful handling:
+Rather than building a parser from scratch, this tool leverages the **vclparser** library
+(https://github.com/perbu/vclparser), which provides a complete, production-ready VCL parser.
 
-## Subroutine Detection
+## Why vclparser?
+
+The vclparser library offers:
+
+1. **Complete AST (Abstract Syntax Tree)**: Parses VCL into a fully-typed tree structure
+2. **Lexical Analysis**: Proper tokenization of all VCL syntax elements
+3. **Semantic Understanding**: Knows about VCL contexts, available variables, and VMOD semantics
+4. **Type Safety**: Type-aware AST nodes for all VCL constructs
+5. **Error Recovery**: Robust parsing with error detection
+6. **Production-Tested**: Battle-tested parser that handles real-world VCL
+
+## What vclparser Handles
+
+The parser correctly handles all VCL language constructs:
+
+### Declarations
+- VCL version declarations (`vcl 4.1;`)
+- Backend definitions (with all properties)
+- ACL definitions
+- Probe definitions
+- Import statements and VMODs
+
+### Subroutines
 ```vcl
 sub vcl_recv {
-    # Body
+    # All statement types
 }
 
 sub custom_logic {
-    # User-defined subroutine
+    # User-defined subroutines
 }
 ```
 
-Pattern: `sub\s+(\w+)\s*{`
+### Statements
+- Conditionals (`if`/`elsif`/`else`) with proper nesting
+- Variable assignments (`set`/`unset`)
+- Return statements
+- Function/VMOD calls
+- Synthetic responses
+- Restarts and error handling
 
-## Variable Assignment
-```vcl
-set req.http.X-Custom = "value";
-set req.backend_hint = my_backend;
-unset req.http.Cookie;
+### Expressions
+- Binary operators (`==`, `!=`, `~`, `!~`, `&&`, `||`, etc.)
+- Unary operators (`!`)
+- Proper operator precedence
+- String concatenation
+- Variable references (req.*, bereq.*, resp.*, beresp.*, obj.*)
+
+### Special Constructs
+1. **Comments**: Both `#` line comments and `/* */` block comments
+2. **Strings**: Proper string literal handling with escaping
+3. **Multiline Statements**: Correctly handles statements spanning multiple lines
+4. **Inline C**: Preserves `C{ ... }C` blocks without modification
+5. **Long Strings**: Handles `{" ... "}` long string syntax
+
+## AST-Based Instrumentation
+
+Using vclparser's AST enables **precise, semantic-aware instrumentation**:
+
+### Traditional String Manipulation (Fragile)
+```go
+// Regex-based approach - breaks easily
+instrumented := regexp.ReplaceAll(vcl, `if\s*\(`, `std.log("trace"); if (`)
 ```
+Problems: Breaks on comments, strings, nested conditions, multiline statements
 
-Pattern: `(set|unset)\s+(req|bereq|beresp|resp|obj)\.([\w.]+)`
+### AST-Based Approach (Robust)
+```go
+// Parse VCL into AST
+ast, err := parser.Parse(vclSource)
 
-## Conditional Statements
-```vcl
-if (req.url ~ "^/api/") {
-    # Then branch
-} elsif (req.url ~ "^/admin/") {
-    # Else-if branch
-} else {
-    # Else branch
+// Walk the tree using visitor pattern
+visitor := &InstrumentVisitor{}
+ast.Walk(visitor)
+
+// Visitor knows context and can inject precisely
+func (v *InstrumentVisitor) VisitIfStmt(node *ast.IfStmt) {
+    // Inject trace log at correct position
+    // Knows about scope, can access variables
+    // Preserves all semantics
 }
 ```
 
-Need to track nesting levels and match braces correctly.
-
-## Return Statements
-```vcl
-return (pass);
-return (hash);
-return (deliver);
-```
-
-Pattern: `return\s*\(\s*(\w+)\s*\)`
-
-## Challenges
-1. **Comments**: Must preserve and not instrument (`#` and `/* */`)
-2. **Strings**: Don't instrument inside string literals
-3. **Multiline**: Statements can span multiple lines
-4. **Inline C**: `C{ ... }C` blocks must be left untouched
-5. **Operators**: VCL has unique operators (`~`, `!~`, `==`, `!=`)
-6. **Built-in Functions**: Recognize VMOD calls (e.g., `std.log()`, `std.ip()`)
+Benefits:
+- Never instruments inside comments or strings
+- Handles complex nesting correctly
+- Understands VCL semantics and contexts
+- Can track variable scope and availability
+- Generates valid VCL guaranteed to parse
 
 ## Example Complete Transformation
 
@@ -201,6 +319,200 @@ sub vcl_backend_response {
 7. Added logs before return statements
 8. Preserved all comments
 9. Maintained line number references to original file
+
+## Advanced Instrumentation with vclparser
+
+The vclparser library enables sophisticated instrumentation that would be impossible with regex:
+
+### 1. Context-Aware Variable Tracking
+
+The parser knows which variables are available in each VCL context:
+
+```go
+// In vcl_recv, we can safely access req.* variables
+func (v *Visitor) VisitVclRecv(node *ast.SubroutineDecl) {
+    // Parser knows: req.url, req.method, req.http.* are available
+    // Can generate: std.log("url=" + req.url)
+}
+
+// In vcl_backend_response, different variables are available
+func (v *Visitor) VisitVclBackendResponse(node *ast.SubroutineDecl) {
+    // Parser knows: beresp.status, beresp.http.* are available
+    // Won't try to access req.url (would be a VCL error)
+}
+```
+
+### 2. Type-Safe Variable References
+
+The parser's type system prevents generating invalid VCL:
+
+```go
+// Parser knows beresp.ttl is a duration, not a string
+// Won't generate: std.log("ttl=" + beresp.ttl)  // Type error!
+// Instead generates: std.log("ttl=" + beresp.ttl)  // With proper conversion
+```
+
+### 3. Smart Conditional Instrumentation
+
+Understanding the AST allows intelligent tracing of control flow:
+
+```go
+// For nested conditionals:
+if (req.url ~ "^/api/") {
+    if (req.method == "POST") {
+        // AST knows this is nested - can track depth
+    }
+}
+
+// Instrumented with proper context:
+std.log("TRACE:vcl_recv:if:depth=0:condition=url_match");
+if (req.url ~ "^/api/") {
+    std.log("TRACE:vcl_recv:if:depth=0:matched=true");
+    std.log("TRACE:vcl_recv:if:depth=1:condition=method_match");
+    if (req.method == "POST") {
+        std.log("TRACE:vcl_recv:if:depth=1:matched=true");
+    }
+}
+```
+
+### 4. Expression Analysis
+
+The AST provides the full expression tree, enabling rich tracing:
+
+```go
+// Expression: req.url ~ "^/api/" && req.method == "POST"
+// AST represents as BinaryExpr(AND, RegexMatch, Equality)
+
+// Can generate detailed trace:
+std.log("TRACE:expr:left=" + (req.url ~ "^/api/"));
+std.log("TRACE:expr:right=" + (req.method == "POST"));
+std.log("TRACE:expr:result=" + (req.url ~ "^/api/" && req.method == "POST"));
+```
+
+### 5. Backend Transformation
+
+The parser can intelligently modify backend declarations:
+
+```go
+// Original AST has BackendDecl node with Properties
+backend := ast.FindBackendDecl("default")
+backend.Properties["host"] = mockBackendHost
+backend.Properties["port"] = mockBackendPort
+
+// Correctly handles all backend declaration formats:
+// - Simple: .host = "example.com";
+// - Complex: .host = "example.com"; .port = "8080"; .probe = my_probe;
+// - Multiple backends with different configs
+```
+
+### 6. VMOD Integration
+
+The parser understands VMOD semantics from embedded VCC files:
+
+```go
+// Knows std.log() exists and its signature
+// Knows std.ip() returns an IP type
+// Won't instrument VMOD internals
+// Can verify VMOD usage is correct before instrumenting
+```
+
+### 7. Include Resolution
+
+The parser handles `include` directives:
+
+```go
+// VCL can include other files:
+include "backends.vcl";
+include "acls.vcl";
+
+// Parser resolves these and provides complete AST
+// Instrumenter sees the full, merged VCL program
+// Line numbers reference correct source files
+```
+
+### 8. Preservation of Semantics
+
+AST transformation guarantees semantic equivalence:
+
+- **Never changes VCL logic** - only adds observability
+- **Preserves operator precedence** - expressions remain correct
+- **Maintains variable scope** - no unintended shadowing
+- **Keeps comments in place** - documentation is preserved
+- **Respects inline C** - doesn't touch `C{ }C` blocks
+
+## Implementation Pattern for Instrumentation
+
+Using vclparser's visitor pattern:
+
+```go
+type InstrumentVisitor struct {
+    ast.BaseVisitor
+    currentSub  string
+    tracePoints []TracePoint
+}
+
+func (v *InstrumentVisitor) VisitSubroutine(node *ast.SubroutineDecl) {
+    v.currentSub = node.Name
+
+    // Add entry trace
+    v.addTrace(TracePoint{
+        Type: "entry",
+        Line: node.Position.Line,
+        Sub:  node.Name,
+    })
+
+    // Visit children
+    v.BaseVisitor.VisitSubroutine(node)
+
+    // Add exit trace (before any return)
+    v.addTrace(TracePoint{
+        Type: "exit",
+        Line: node.EndPosition.Line,
+        Sub:  node.Name,
+    })
+}
+
+func (v *InstrumentVisitor) VisitIfStmt(node *ast.IfStmt) {
+    // Trace the condition evaluation
+    v.addTrace(TracePoint{
+        Type:      "condition",
+        Line:      node.Position.Line,
+        Sub:       v.currentSub,
+        Condition: node.Condition.String(),
+    })
+
+    // Visit branches
+    v.VisitBlockStmt(node.ThenBranch)
+    if node.ElseBranch != nil {
+        v.VisitBlockStmt(node.ElseBranch)
+    }
+}
+
+func (v *InstrumentVisitor) VisitSetStmt(node *ast.SetStmt) {
+    v.addTrace(TracePoint{
+        Type:     "set",
+        Line:     node.Position.Line,
+        Sub:      v.currentSub,
+        Variable: node.Variable.String(),
+        Value:    node.Value.String(),
+    })
+}
+
+func (v *InstrumentVisitor) VisitReturnStmt(node *ast.ReturnStmt) {
+    v.addTrace(TracePoint{
+        Type:   "return",
+        Line:   node.Position.Line,
+        Sub:    v.currentSub,
+        Action: node.Action.String(),
+    })
+}
+```
+
+The AST-based approach makes instrumentation:
+- **Reliable**: Won't break on edge cases
+- **Complete**: Captures all execution paths
+- **Maintainable**: Easy to add new instrumentation types
+- **Correct**: Generates valid VCL every time
 
 # Trace VCL
 
@@ -482,8 +794,8 @@ When starting a test, we start by executing varnishlog-json and capture the outp
 # Implementation Strategy
 
 ## Phase 1: Core Functionality
-1. **VCL Parser**: Simple regex-based parser to identify subroutines, if statements, set operations, and return statements
-2. **Instrumenter**: Inject std.log() calls at strategic points
+1. **VCL Parser Integration**: Integrate vclparser library (https://github.com/perbu/vclparser) for robust AST-based parsing
+2. **AST-Based Instrumenter**: Walk the AST using visitor pattern to inject std.log() calls at strategic points
 3. **Mock Backend**: HTTP server with configurable responses
 4. **Test Runner**: Execute single test, capture logs, verify basic assertions
 5. **Basic Assertions**: Status code, header presence/value, body contains
@@ -508,10 +820,9 @@ vcltest/
 │   └── vcltest/
 │       └── main.go          # CLI entry point
 ├── pkg/
-│   ├── parser/
-│   │   └── vcl.go           # VCL parsing
 │   ├── instrument/
-│   │   └── instrument.go    # VCL instrumentation
+│   │   ├── visitor.go       # AST visitor for instrumentation
+│   │   └── transform.go     # AST-to-VCL transformation
 │   ├── backend/
 │   │   └── mock.go          # Mock HTTP backend
 │   ├── varnish/
@@ -526,8 +837,11 @@ vcltest/
 ├── examples/
 │   ├── basic.vcl
 │   └── basic_test.json
+├── go.mod
 └── README.md
 ```
+
+Note: VCL parsing is handled by the external vclparser library dependency.
 
 ## Key Design Decisions
 
@@ -535,7 +849,7 @@ vcltest/
 - Use simple data structures (structs, maps)
 - JSON for test specifications (human-readable, easy to edit)
 - Avoid complex abstractions or frameworks
-- Stdlib only - no external dependencies
+- Minimal dependencies - stdlib plus vclparser for robust VCL parsing
 
 ### Deterministic Testing
 - Each test is isolated (fresh VCL load)
@@ -622,11 +936,28 @@ backend := func(r *http.Request) Response {
 **Simplicity over flexibility.**
 
 - Tests should only use the stdlib
-- No external dependencies unless absolutely necessary
+- Minimal external dependencies (vclparser for VCL parsing, standard Go libraries only)
 - Clear variable names, comprehensive comments
 - Error handling: always check errors, provide context
-- Testing: unit tests for parsers and instrumenters
+- Testing: unit tests for instrumenters and test runners
 - Examples: provide working examples in examples/ directory
+
+## Dependencies
+
+The project uses minimal external dependencies:
+
+1. **vclparser** (github.com/perbu/vclparser) - Production-grade VCL parser with AST support
+   - Provides robust VCL parsing and semantic analysis
+   - Enables reliable AST-based instrumentation
+   - Eliminates the need to build a parser from scratch
+
+2. **Standard library only** for all other functionality:
+   - net/http for mock backends and HTTP requests
+   - os/exec for varnishd and varnishlog process management
+   - encoding/json for test specifications and log parsing
+   - testing for unit tests
+
+This keeps the project maintainable while leveraging battle-tested VCL parsing.
 
 ## Code Principles
 
