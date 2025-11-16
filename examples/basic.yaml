@@ -1,0 +1,35 @@
+name: Health check endpoint
+vcl: examples/basic.vcl
+request:
+  url: /health
+expect:
+  status: 200
+  backend_calls: 0
+  headers:
+    X-VCL-Version: "4.1"
+  body_contains: "OK"
+
+---
+
+name: Backend pass-through
+vcl: examples/basic.vcl
+request:
+  url: /api/test
+expect:
+  status: 200
+  backend_calls: 1
+  headers:
+    X-Backend: "hit"
+    X-VCL-Version: "4.1"
+
+---
+
+name: Redirect handling
+vcl: examples/basic.vcl
+request:
+  url: /redirect
+expect:
+  status: 301
+  backend_calls: 0
+  headers:
+    Location: "/new-location"
