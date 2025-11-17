@@ -6,7 +6,7 @@ VCL (Varnish Configuration Language) is powerful but can be difficult to debug a
 a test framework that allows developers to:
 
 1. Write declarative test specifications in YAML
-2. Automatically instrument VCL code for observability
+2. Use Varnish's built-in VCL tracing for observability
 3. Execute tests against a real Varnish instance
 4. Verify behavior with clear pass/fail results
 
@@ -32,7 +32,7 @@ VTest2 focuses on:
 
 This tool is **purpose-built for testing VCL logic**:
 
-1. **VCL-Level Observability**: Automatically instruments your VCL to trace execution
+1. **VCL-Level Observability**: Uses Varnish's built-in `vcl_trace` parameter to trace execution
 2. **Simple Assertions**: Assert on status codes, backend calls, and response content
 3. **Clear VCL Debugging**: When tests fail, see exactly which lines of VCL were executed
 4. **Declarative YAML Format**: Write simple YAML test specifications
@@ -226,131 +226,82 @@ expect:
 
 For each test:
 
-1. Start varnishd instance (reused across tests)
-2. Parse and instrument the VCL file
-3. Start mock backend server
-4. Load instrumented VCL into varnishd
-5. Start varnishlog to capture trace
-6. Execute HTTP request
-7. Verify expectations
-8. Cleanup (stop backend)
+1. Start varnishd instance with `vcl_trace=on` parameter (reused across tests)
+2. Start mock backend server
+3. Modify VCL to use mock backend address and load into varnishd
+4. Start varnishlog to capture VCL trace logs
+5. Execute HTTP request
+6. Verify expectations
+7. Cleanup (stop backend)
 
 # Core Components
 
 ## Test Runner
 - Orchestrates test lifecycle
-- Manages varnishd, varnishlog, mock backends
+- Manages varnishd (with `vcl_trace=on`), varnishlog, mock backends
 - Collects results and reports pass/fail
 - Handles cleanup on failures
 
-## VCL Instrumenter
-- Parses VCL using vclparser library
-- Injects trace logs at each line
-- Preserves original VCL semantics
-- Replaces backend with mock address
+## VCL Backend Replacer
+- Simple text replacement to change backend address to mock backend
+- Minimal VCL modification (only backend host/port)
+- Preserves all VCL logic unchanged
 
 ## Mock Backend Server
 - Simple HTTP server
 - Returns configured status/headers/body
 - Tracks number of requests received
 
+## Trace Parser
+- Parses varnishlog output with `vcl_trace` enabled
+- Extracts which VCL lines were executed
+- Counts backend connection events
+
 ## Assertion Engine
 - Evaluates test expectations
 - Provides clear failure messages
 - Shows which VCL lines executed
 
-# VCL Parsing with vclparser
+# VCL Tracing with vcl_trace
 
-Rather than building a parser from scratch, this tool leverages the **vclparser** library
-(https://github.com/perbu/vclparser), which provides a complete, production-ready VCL parser.
+Varnish has a built-in parameter `vcl_trace` that provides extensive logging about VCL execution. When enabled,
+Varnish automatically logs which VCL lines are executed during request processing.
 
-## Why vclparser?
+## Why vcl_trace?
 
-The vclparser library offers:
+Using Varnish's built-in tracing offers major advantages:
 
-1. **Complete AST (Abstract Syntax Tree)**: Parses VCL into a fully-typed tree structure
-2. **Semantic Understanding**: Knows about VCL contexts, available variables, and VMOD semantics
-3. **Type Safety**: Type-aware AST nodes for all VCL constructs
-4. **Production-Tested**: Battle-tested parser that handles real-world VCL
+1. **No VCL Modification**: VCL runs exactly as written, no parsing or instrumentation needed
+2. **Zero Overhead**: Tracing is built into Varnish, optimized and reliable
+3. **Complete Coverage**: Varnish traces all VCL execution automatically
+4. **Production-Ready**: This is Varnish's own debugging feature, battle-tested
 
-## What vclparser Handles
+## How vcl_trace Works
 
-The parser correctly handles all VCL language constructs:
+When you start varnishd with the `vcl_trace` parameter enabled, Varnish logs VCL execution to varnishlog:
 
-### Declarations
-- VCL version declarations (`vcl 4.1;`)
-- Backend definitions (with all properties)
-- ACL definitions
-- Import statements and VMODs
-
-### Subroutines
-```vcl
-sub vcl_recv {
-    # All statement types
-}
-
-sub custom_logic {
-    # User-defined subroutines
-}
+```bash
+varnishd -n /tmp/varnish_test -a :8080 -p vcl_trace=on ...
 ```
 
-### Statements
-- Conditionals (`if`/`elsif`/`else`) with proper nesting
-- Variable assignments (`set`/`unset`)
-- Return statements
-- Function/VMOD calls
-- Synthetic responses
-
-### Special Constructs
-1. **Comments**: Both `#` line comments and `/* */` block comments
-2. **Strings**: Proper string literal handling with escaping
-3. **Inline C**: Preserves `C{ ... }C` blocks without modification
-4. **Include directives**: Resolves `include "file.vcl"` statements
-
-## AST-Based Instrumentation
-
-Using vclparser's AST enables **precise, semantic-aware instrumentation**:
-
-### Traditional String Manipulation (Fragile)
-```go
-// Regex-based approach - breaks easily
-instrumented := regexp.ReplaceAll(vcl, `if\s*\(`, `std.log("trace"); if (`)
-```
-Problems: Breaks on comments, strings, nested conditions, multiline statements
-
-### AST-Based Approach (Robust)
-```go
-// Parse VCL into AST
-ast, err := parser.Parse(vclSource)
-
-// Walk the tree using visitor pattern
-visitor := &InstrumentVisitor{}
-ast.Walk(visitor)
-
-// Visitor injects logs at each statement
-func (v *InstrumentVisitor) VisitIfStmt(node *ast.IfStmt) {
-    // Inject: std.log("TRACE:12:vcl_recv")
-    // where 12 is the line number in original VCL
-}
-```
-
-Benefits:
-- Never instruments inside comments or strings
-- Handles complex nesting correctly
-- Understands VCL semantics
-- Generates valid VCL guaranteed to parse
-
-# VCL Instrumentation
-
-## Simple Trace Format
-
-Each VCL line gets a simple trace log:
+During request processing, varnishlog will show entries like:
 
 ```
-TRACE:<line>:<subroutine>
+*   << Request  >> 12345
+-   VCL_call     RECV
+-   VCL_trace    vcl_recv:8
+-   VCL_trace    vcl_recv:10
+-   VCL_trace    vcl_recv:11
+-   VCL_return   synth
 ```
 
-Example instrumented VCL:
+Each `VCL_trace` line shows:
+- The subroutine name (e.g., `vcl_recv`)
+- The line number that was executed (e.g., `:8`)
+
+## Backend Replacement
+
+The only VCL modification needed is replacing backend addresses with the mock backend:
 
 **Original VCL:**
 ```vcl
@@ -372,11 +323,9 @@ sub vcl_recv {
 }
 ```
 
-**Instrumented VCL:**
+**Modified VCL (for testing):**
 ```vcl
 vcl 4.1;
-
-import std;
 
 backend default {
     .host = "127.0.0.1";
@@ -384,48 +333,33 @@ backend default {
 }
 
 sub vcl_recv {
-    std.log("TRACE:8:vcl_recv");
     if (req.url ~ "^/admin") {
-        std.log("TRACE:9:vcl_recv");
         return (synth(403));
     }
-    std.log("TRACE:11:vcl_recv");
     if (req.url ~ "^/api/") {
-        std.log("TRACE:12:vcl_recv");
         return (pass);
     }
-    std.log("TRACE:14:vcl_recv");
     return (hash);
 }
 ```
 
-**Key Transformations:**
-1. Added `import std;` at top
-2. Changed backend host/port to mock backend address
-3. Added `TRACE:line:subroutine` logs before each statement
-4. Preserved all comments
-5. Line numbers reference the original VCL file
-
-## Instrumentation Points
-
-The instrumenter injects trace logs before:
-1. Each statement in a subroutine
-2. Inside if/elsif/else branches
-3. Before return statements
-
-This gives complete visibility into which code paths executed.
+**Key Changes:**
+1. Only backend host/port are changed (simple text replacement)
+2. All VCL logic remains completely unchanged
+3. No imports or trace logs needed
 
 ## Log Capture
 
-Use simple varnishlog text format:
+Use varnishlog to capture trace events:
 
 ```bash
-varnishlog -n <instance> -g request
+varnishlog -n <instance> -g request -i VCL_trace,VCL_call,VCL_return,BackendOpen
 ```
 
 Parse the output to extract:
-- `TRACE:` log entries (shows which VCL lines executed)
-- Backend connection events (to count backend calls)
+- `VCL_trace` entries (shows which VCL lines executed)
+- `BackendOpen` events (to count backend calls)
+- `VCL_call` and `VCL_return` (to understand subroutine flow)
 
 # Mock Backend
 
@@ -461,7 +395,7 @@ func StartBackend(config BackendConfig) (*http.Server, string, error) {
 }
 ```
 
-The instrumenter replaces backend definitions in VCL with the mock backend address.
+A simple text replacement updates backend definitions in VCL with the mock backend address.
 
 # Assertions
 
@@ -559,19 +493,19 @@ Response status: 200
 1. **YAML Parser**:
    - Parse test specification from YAML file
    - Support multiple tests per file (separated by `---`)
-2. **VCL Instrumenter**:
-   - Use vclparser to parse VCL
-   - Inject simple `TRACE:line:sub` logs
-   - Replace backend with mock address
+2. **VCL Backend Replacer**:
+   - Simple text replacement to change backend address to mock backend
+   - Minimal modification (only host/port)
 3. **Mock Backend**: HTTP server that returns configured response
 4. **Test Runner**:
-   - Start varnishd (or reuse)
-   - Load instrumented VCL
-   - Start varnishlog
+   - Start varnishd with `vcl_trace=on` (or reuse)
+   - Load modified VCL
+   - Start varnishlog to capture VCL_trace events
    - Make HTTP request
-   - Capture response and logs
-5. **Assertions**: Verify status, backend_calls, headers, body_contains
-6. **Output**:
+   - Capture response and trace logs
+5. **Trace Parser**: Parse varnishlog output to extract executed line numbers
+6. **Assertions**: Verify status, backend_calls, headers, body_contains
+7. **Output**:
    - Simple PASS/FAIL with timing
    - On failure: show VCL with executed lines marked (`*` for executed, `|` for not)
    - Color-code executed lines (green) when outputting to terminal
@@ -612,13 +546,13 @@ vcltest/
 ├── pkg/
 │   ├── testspec/
 │   │   └── spec.go          # YAML test spec parsing
-│   ├── instrument/
-│   │   └── instrument.go    # VCL instrumentation using vclparser
+│   ├── vcl/
+│   │   └── backend.go       # Simple backend address replacement
 │   ├── backend/
 │   │   └── mock.go          # Mock HTTP backend
 │   ├── varnish/
 │   │   ├── manager.go       # Varnish process management
-│   │   └── log.go           # varnishlog parsing
+│   │   └── trace.go         # varnishlog trace parsing
 │   ├── runner/
 │   │   └── runner.go        # Test execution
 │   └── assertion/
@@ -660,12 +594,12 @@ vcltest --version              # Version info
 
 ## Minimal Dependencies
 
-- **vclparser** for VCL parsing (robust, battle-tested)
 - **gopkg.in/yaml.v3** for YAML parsing (supports multiple documents)
 - **Standard library only** for everything else:
   - `net/http` for mock backends and HTTP requests
   - `os/exec` for varnishd and varnishlog
   - `testing` for unit tests
+  - `strings` and `regexp` for simple backend address replacement
   - ANSI color codes (simple strings, no library needed)
 
 ## Deterministic Testing
@@ -795,7 +729,7 @@ The output shows that lines 8-11 were executed (marked with `*`), revealing that
 1. **Readability**: Code should be self-documenting
 2. **Correctness**: Prefer correct over clever
 3. **Maintainability**: Future developers should understand the code easily
-4. **Minimal dependencies**: stdlib + vclparser only
+4. **Minimal dependencies**: stdlib + yaml.v3 only
 
 ## Error Handling
 
@@ -803,13 +737,13 @@ Always wrap errors with context:
 
 ```go
 if err != nil {
-    return fmt.Errorf("failed to instrument VCL: %w", err)
+    return fmt.Errorf("failed to parse varnishlog trace: %w", err)
 }
 ```
 
 ## Testing
 
-- Unit tests for instrumenter, parser, assertions
+- Unit tests for trace parser, backend replacer, assertions
 - Integration tests for full test runner
 - Examples in `examples/` directory that actually work
 
