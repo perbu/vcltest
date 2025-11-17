@@ -1,16 +1,16 @@
 # VCLTest - VCL Testing Framework
 
-VCLTest is a declarative testing framework for Varnish Configuration Language (VCL) that makes it easy to verify your VCL logic with automatic instrumentation and execution tracing.
+VCLTest is a declarative testing framework for Varnish Configuration Language (VCL) that verifies VCL logic with automatic instrumentation and execution tracing.
 
 ## Features
 
-- **Declarative YAML-based tests** - Write tests in simple, readable YAML format
+- **Declarative YAML-based tests** - Write tests in YAML format
 - **Automatic VCL instrumentation** - Traces execution flow without manual logging
 - **Mock backend support** - Controlled backend responses for deterministic testing
-- **Clear pass/fail output** - Shows which VCL lines executed and which assertions failed
+- **Pass/fail output** - Shows which VCL lines executed and which assertions failed
 - **Multiple assertions** - Status codes, backend calls, headers, and body content
 - **Multi-test files** - Run multiple tests from a single YAML file
-- **Color output** - Easy-to-read terminal output with color highlighting
+- **Colored output** - Terminal output with color highlighting
 
 ## Quick Start
 
@@ -241,13 +241,12 @@ VCLTest is inspired by Varnish's VTest but takes a different approach:
 | **Learning curve** | Low | Moderate |
 | **Flexibility** | Focused on common cases | Highly flexible |
 
-VCLTest is ideal for:
-- Quick VCL validation during development
+VCLTest supports:
+- VCL validation during development
 - CI/CD integration
-- Teams new to VCL testing
 - Standard HTTP request/response testing
 
-Use VTest when you need:
+VTest supports:
 - Complex multi-client scenarios
 - Low-level Varnish protocol testing
 - Advanced timing controls
@@ -273,80 +272,3 @@ VCLTest consists of several components:
 7. **Assertion Engine** (`pkg/assertion`) - Evaluates test expectations
 8. **Output Formatter** (`pkg/runner/output.go`) - Formats results
 
-## Development
-
-### Running Tests
-
-```bash
-# Run all unit tests
-go test ./...
-
-# Run tests with coverage
-go test -cover ./...
-
-# Run specific package tests
-go test ./pkg/testspec
-```
-
-### Project Structure
-
-```
-vcltest/
-├── cmd/vcltest/          # CLI application
-├── pkg/
-│   ├── testspec/         # YAML test parsing
-│   ├── instrument/       # VCL instrumentation
-│   ├── backend/          # Mock HTTP backend
-│   ├── varnish/          # Varnish process management
-│   ├── runner/           # Test execution
-│   └── assertion/        # Assertion evaluation
-├── examples/             # Example tests
-└── README.md
-```
-
-## Roadmap
-
-See `plan.md` for the full implementation roadmap.
-
-### Phase 1 (Current) - MVP
-
-- ✅ Single test file execution
-- ✅ Basic assertions (status, backend_calls, headers, body_contains)
-- ✅ VCL execution tracing
-- ✅ Color output
-
-### Phase 2 - Test Discovery
-
-- [ ] Directory scanning
-- [ ] Batch execution
-- [ ] Summary reporting
-- [ ] Test filtering
-
-### Phase 3 - Advanced Features
-
-- [ ] Multiple backends per test
-- [ ] Multi-request tests
-- [ ] Cache behavior testing
-- [ ] HTML reports
-- [ ] Watch mode
-- [ ] Parallel execution
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## License
-
-[License TBD]
-
-## Credits
-
-Created by [Per Buer](https://github.com/perbu)
-
-Inspired by Varnish VTest and the need for simpler VCL testing workflows.
