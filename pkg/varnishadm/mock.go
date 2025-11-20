@@ -285,6 +285,26 @@ func (m *MockVarnishadm) VCLListStructured() (*VCLListResult, error) {
 	return parseVCLList(resp.payload)
 }
 
+// VCLShow shows the VCL source with verbose output in the mock
+func (m *MockVarnishadm) VCLShow(name string) (VarnishResponse, error) {
+	cmd := fmt.Sprintf("vcl.show -v %s", name)
+	return m.Exec(cmd)
+}
+
+// VCLShowStructured shows VCL source and returns parsed config mapping in the mock
+func (m *MockVarnishadm) VCLShowStructured(name string) (*VCLShowResult, error) {
+	resp, err := m.VCLShow(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.statusCode != ClisOk {
+		return nil, fmt.Errorf("vcl.show -v command failed with status %d: %s", resp.statusCode, resp.payload)
+	}
+
+	return parseVCLShow(resp.payload)
+}
+
 // Parameter command wrappers
 
 // ParamShow shows the value of a parameter in the mock

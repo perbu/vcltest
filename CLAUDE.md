@@ -35,6 +35,9 @@ Implements the varnishadm server protocol and command interface.
 
 - `Server` - Listens for varnishd connections and handles CLI protocol
 - `VarnishadmInterface` - Command interface for Varnish management operations
+- `VCLListResult` - Parsed VCL list with entries and active VCL
+- `VCLShowResult` - Parsed VCL source with config ID to filename mapping
+- `TLSCertListResult` - Parsed TLS certificate list
 
 **Protocol details:**
 
@@ -47,7 +50,10 @@ Implements the varnishadm server protocol and command interface.
 - `New()` - Creates server with port, secret, and logger
 - `Run()` - Starts server and accepts connections (blocks)
 - `Exec()` - Executes arbitrary varnishadm commands
-- High-level commands: `VCLLoad()`, `VCLUse()`, `ParamSet()`, `TLSCertLoad()`, etc.
+- VCL commands: `VCLLoad()`, `VCLUse()`, `VCLDiscard()`, `VCLList()`, `VCLListStructured()`
+- `VCLShow()` / `VCLShowStructured()` - Show VCL source with config ID to filename mapping
+- Parameter commands: `ParamShow()`, `ParamSet()`
+- TLS commands: `TLSCertLoad()`, `TLSCertList()`, `TLSCertCommit()`, etc.
 
 **Responsibilities:**
 
@@ -55,7 +61,8 @@ Implements the varnishadm server protocol and command interface.
 - Authenticate varnishd using shared secret
 - Parse CLI protocol messages
 - Execute commands and return structured responses
-- Parse complex responses (VCL list, TLS cert list)
+- Parse complex responses (VCL list, VCL show with config mapping, TLS cert list)
+- Provide config ID to filename mapping for trace log analysis
 
 ## pkg/service
 

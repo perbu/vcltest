@@ -77,6 +77,27 @@ func (v *Server) VCLListStructured() (*VCLListResult, error) {
 	return parseVCLList(resp.payload)
 }
 
+// VCLShow shows the VCL source with verbose output including config headers
+func (v *Server) VCLShow(name string) (VarnishResponse, error) {
+	cmd := fmt.Sprintf("vcl.show -v %s", name)
+	return v.Exec(cmd)
+}
+
+// VCLShowStructured shows VCL source and returns parsed config mapping
+// This is useful for mapping trace log config IDs to filenames
+func (v *Server) VCLShowStructured(name string) (*VCLShowResult, error) {
+	resp, err := v.VCLShow(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.statusCode != ClisOk {
+		return nil, fmt.Errorf("vcl.show -v command failed with status %d: %s", resp.statusCode, resp.payload)
+	}
+
+	return parseVCLShow(resp.payload)
+}
+
 // Parameter commands
 
 // ParamShow shows the value of a parameter

@@ -45,3 +45,17 @@ type Size struct {
 func (s Size) String() string {
 	return fmt.Sprintf("%d%s", s.Value, s.Unit)
 }
+
+// VCLConfigEntry represents a single VCL configuration file from vcl.show -v output
+type VCLConfigEntry struct {
+	ConfigID int    // Config ID (0 = main VCL, 1+ = included files, high numbers = builtin)
+	Size     int    // Size in bytes
+	Filename string // File path or "<builtin>"
+}
+
+// VCLShowResult contains the parsed result of vcl.show -v command
+type VCLShowResult struct {
+	Entries   []VCLConfigEntry // All config entries including builtin
+	ConfigMap map[int]string   // Map of config ID to filename (excluding builtin)
+	VCLSource string           // Full VCL source code
+}

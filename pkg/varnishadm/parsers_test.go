@@ -347,3 +347,144 @@ func TestParseParenthesesContent(t *testing.T) {
 		})
 	}
 }
+
+func TestParseVCLShow(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		expected *VCLShowResult
+		wantErr  bool
+	}{
+		{
+			name: "VCL with includes",
+			payload: `// VCL.SHOW 0 356 /etc/varnish/main.vcl
+// VCL.SHOW 1 173 /etc/varnish/included.vcl
+// VCL.SHOW 2 7158 <builtin>
+
+vcl 4.1;
+
+sub vcl_recv {
+    if (req.url ~ "^/admin") {
+        return (synth(403, "Forbidden"));
+    }
+}`,
+			expected: &VCLShowResult{
+				Entries: []VCLConfigEntry{
+					{ConfigID: 0, Size: 356, Filename: "/etc/varnish/main.vcl"},
+					{ConfigID: 1, Size: 173, Filename: "/etc/varnish/included.vcl"},
+					{ConfigID: 2, Size: 7158, Filename: "<builtin>"},
+				},
+				ConfigMap: map[int]string{
+					0: "/etc/varnish/main.vcl",
+					1: "/etc/varnish/included.vcl",
+				},
+				VCLSource: `
+vcl 4.1;
+
+sub vcl_recv {
+    if (req.url ~ "^/admin") {
+        return (synth(403, "Forbidden"));
+    }
+}`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "VCL without includes",
+			payload: `// VCL.SHOW 0 245 /etc/varnish/default.vcl
+// VCL.SHOW 1 7158 <builtin>
+
+vcl 4.1;
+
+backend default {
+    .host = "127.0.0.1";
+    .port = "8080";
+}`,
+			expected: &VCLShowResult{
+				Entries: []VCLConfigEntry{
+					{ConfigID: 0, Size: 245, Filename: "/etc/varnish/default.vcl"},
+					{ConfigID: 1, Size: 7158, Filename: "<builtin>"},
+				},
+				ConfigMap: map[int]string{
+					0: "/etc/varnish/default.vcl",
+				},
+				VCLSource: `
+vcl 4.1;
+
+backend default {
+    .host = "127.0.0.1";
+    .port = "8080";
+}`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Empty VCL source",
+			payload: `// VCL.SHOW 0 0 /etc/varnish/empty.vcl
+// VCL.SHOW 1 7158 <builtin>
+
+`,
+			expected: &VCLShowResult{
+				Entries: []VCLConfigEntry{
+					{ConfigID: 0, Size: 0, Filename: "/etc/varnish/empty.vcl"},
+					{ConfigID: 1, Size: 7158, Filename: "<builtin>"},
+				},
+				ConfigMap: map[int]string{
+					0: "/etc/varnish/empty.vcl",
+				},
+				VCLSource: "\n",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseVCLShow(tt.payload)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseVCLShow() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if err != nil {
+				return
+			}
+
+			// Check entries count
+			if len(result.Entries) != len(tt.expected.Entries) {
+				t.Errorf("parseVCLShow() got %d entries, want %d", len(result.Entries), len(tt.expected.Entries))
+				return
+			}
+
+			// Check each entry
+			for i, entry := range result.Entries {
+				expected := tt.expected.Entries[i]
+				if entry.ConfigID != expected.ConfigID {
+					t.Errorf("Entry[%d].ConfigID = %d, want %d", i, entry.ConfigID, expected.ConfigID)
+				}
+				if entry.Size != expected.Size {
+					t.Errorf("Entry[%d].Size = %d, want %d", i, entry.Size, expected.Size)
+				}
+				if entry.Filename != expected.Filename {
+					t.Errorf("Entry[%d].Filename = %q, want %q", i, entry.Filename, expected.Filename)
+				}
+			}
+
+			// Check ConfigMap
+			if len(result.ConfigMap) != len(tt.expected.ConfigMap) {
+				t.Errorf("parseVCLShow() ConfigMap got %d entries, want %d", len(result.ConfigMap), len(tt.expected.ConfigMap))
+			}
+			for configID, filename := range tt.expected.ConfigMap {
+				if result.ConfigMap[configID] != filename {
+					t.Errorf("ConfigMap[%d] = %q, want %q", configID, result.ConfigMap[configID], filename)
+				}
+			}
+
+			// Check VCL source
+			if result.VCLSource != tt.expected.VCLSource {
+				t.Errorf("parseVCLShow() VCLSource mismatch:\ngot:\n%q\nwant:\n%q", result.VCLSource, tt.expected.VCLSource)
+			}
+		})
+	}
+}

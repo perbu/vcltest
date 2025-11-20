@@ -23,6 +23,8 @@ type VarnishadmInterface interface {
 	VCLDiscard(name string) (VarnishResponse, error)
 	VCLList() (VarnishResponse, error)
 	VCLListStructured() (*VCLListResult, error)
+	VCLShow(name string) (VarnishResponse, error)
+	VCLShowStructured(name string) (*VCLShowResult, error)
 
 	// Parameter commands
 	ParamShow(name string) (VarnishResponse, error)

@@ -190,3 +190,61 @@ func parseTLSCertLine(line string) (TLSCertEntry, error) {
 
 	return entry, nil
 }
+
+// parseVCLShow parses the output from vcl.show -v command
+// Expected format includes headers like:
+// // VCL.SHOW 0 356 /path/to/main.vcl
+// // VCL.SHOW 1 173 /path/to/included.vcl
+// // VCL.SHOW 2 7158 <builtin>
+func parseVCLShow(payload string) (*VCLShowResult, error) {
+	result := &VCLShowResult{
+		ConfigMap: make(map[int]string),
+	}
+
+	lines := strings.Split(payload, "\n")
+
+	// Regex to match VCL.SHOW headers: // VCL.SHOW <config> <size> <filename>
+	vclShowRegex := regexp.MustCompile(`^//\s+VCL\.SHOW\s+(\d+)\s+(\d+)\s+(.+)$`)
+
+	var vclSourceLines []string
+	parsingSource := false
+
+	for _, line := range lines {
+		// Check if this is a VCL.SHOW header line
+		if matches := vclShowRegex.FindStringSubmatch(line); len(matches) == 4 {
+			configID, err := strconv.Atoi(matches[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid config ID %q: %w", matches[1], err)
+			}
+
+			size, err := strconv.Atoi(matches[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid size %q: %w", matches[2], err)
+			}
+
+			filename := strings.TrimSpace(matches[3])
+
+			entry := VCLConfigEntry{
+				ConfigID: configID,
+				Size:     size,
+				Filename: filename,
+			}
+			result.Entries = append(result.Entries, entry)
+
+			// Add to ConfigMap if not builtin
+			if filename != "<builtin>" {
+				result.ConfigMap[configID] = filename
+			}
+
+			parsingSource = true
+		} else if parsingSource {
+			// This is part of the VCL source code
+			vclSourceLines = append(vclSourceLines, line)
+		}
+	}
+
+	// Join all VCL source lines
+	result.VCLSource = strings.Join(vclSourceLines, "\n")
+
+	return result, nil
+}
