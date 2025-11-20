@@ -87,3 +87,39 @@ Orchestrates startup and lifecycle of varnishadm server and varnish daemon.
 - Handle errors from either service
 - Graceful shutdown via context cancellation
 - Provide unified interface for service management
+
+## pkg/recorder
+
+Records and parses varnishlog output for VCL execution analysis.
+
+**Key types:**
+
+- `Recorder` - Manages varnishlog recording lifecycle
+- `Message` - Structured log message with type and parsed fields
+- `VCLTrace` - Parsed VCL_trace entry (config, line, column)
+- `BackendCall` - Parsed BackendOpen entry
+- `VCLTraceSummary` - Execution summary (lines, backend calls, VCL flow)
+
+**Main operations:**
+
+- `New()` - Creates recorder with work directory and logger
+- `Start()` - Begins recording to binary file (varnishlog -g request -w)
+- `Stop()` - Gracefully stops recording
+- `GetMessages()` - Reads binary log and returns parsed messages
+- `GetVCLMessages()` - Filters for VCL-related messages only
+- `GetTraceSummary()` - Returns execution summary with line numbers and backend count
+
+**Parsing functions:**
+
+- `ParseVCLTrace()` - Extracts config/line/column from trace messages
+- `ParseBackendCall()` - Extracts backend connection details
+- `GetExecutedLines()` - Returns unique line numbers from user VCL (filters built-in)
+- `CountBackendCalls()` - Counts BackendOpen entries
+
+**Responsibilities:**
+
+- Capture varnishlog output during test execution
+- Parse Varnish CLI protocol log format per VARNISH_TRACE_SPEC.md
+- Filter user VCL traces (config=0) from built-in VCL
+- Provide structured access to VCL execution data
+- Support single recording at a time
