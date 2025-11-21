@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"log/slog"
+	"os"
 	"os/exec"
 )
 
@@ -53,4 +54,5 @@ type Recorder struct {
 	cmd        *exec.Cmd
 	logger     *slog.Logger
 	running    bool
+	outfile    *os.File // stdout file handle
 }

@@ -5,6 +5,7 @@ type Config struct {
 	WorkDir     string
 	VarnishDir  string
 	StorageArgs []string
+	VCLPath     string // Optional: VCL file to load on startup (for -f flag)
 
 	License LicenseConfig
 	Varnish VarnishConfig

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/perbu/vcltest/pkg/config"
@@ -43,12 +44,21 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	// Check for VCL file argument
+	// Check for file argument
 	if flags.NArg() == 0 {
-		return fmt.Errorf("missing VCL file argument\nUsage: vcltest [options] <vcl-file>")
+		return fmt.Errorf("missing file argument\nUsage: vcltest [options] <test-file.yaml|vcl-file>")
 	}
 
-	vclFile := flags.Arg(0)
+	inputFile := flags.Arg(0)
+
+	// Determine if input is a test file (.yaml) or VCL file (.vcl)
+	if strings.HasSuffix(inputFile, ".yaml") || strings.HasSuffix(inputFile, ".yml") {
+		// Run tests
+		return runTests(ctx, inputFile, *verbose)
+	}
+
+	// Otherwise, treat as VCL file (old behavior)
+	vclFile := inputFile
 
 	// Check if VCL file exists
 	if _, err := os.Stat(vclFile); os.IsNotExist(err) {

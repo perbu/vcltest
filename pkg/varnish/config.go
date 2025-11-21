@@ -22,8 +22,14 @@ func BuildArgs(cfg *Config) []string {
 	args = append(args, "-S", secretPath) // Enable auth on the CLI with secret file
 	args = append(args, "-M", fmt.Sprintf("localhost:%d", cfg.Varnish.AdminPort))
 	args = append(args, "-n", cfg.VarnishDir)
-	args = append(args, "-F")     // Run in foreground
-	args = append(args, "-f", "") // Empty VCL - VCL will be loaded via varnishadm CLI after startup
+	args = append(args, "-F") // Run in foreground
+
+	// Add VCL file if specified, otherwise empty VCL will be loaded via varnishadm
+	if cfg.VCLPath != "" {
+		args = append(args, "-f", cfg.VCLPath)
+	} else {
+		args = append(args, "-f", "")
+	}
 
 	// HTTP listening addresses
 	for _, http := range cfg.Varnish.HTTP {
@@ -55,6 +61,7 @@ func BuildArgs(cfg *Config) []string {
 
 	// Set non-user-controllable parameters
 	args = append(args, "-p", "vcl_path="+filepath.Join(cfg.WorkDir, "vcl")) // vcl_path points to the generated VCL directory
+	args = append(args, "-p", "feature=+trace")                              // Enable VCL trace logging
 
 	return args
 }

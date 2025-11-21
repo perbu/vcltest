@@ -49,16 +49,26 @@ func (r *Recorder) Start() error {
 	// Start varnishlog in background
 	// -n: varnish working directory
 	// -g request: group by request
-	// -w: write to file
+	// Write to stdout instead of binary file (no -w flag)
+	// Binary format has buffering issues with single requests
 	r.cmd = exec.Command("varnishlog",
 		"-n", r.workDir,
 		"-g", "request",
-		"-w", r.outputFile,
 	)
+
+	// Capture stdout to file
+	var err error
+	r.outfile, err = os.Create(r.outputFile)
+	if err != nil {
+		return fmt.Errorf("creating output file: %w", err)
+	}
+	r.cmd.Stdout = r.outfile
+	r.cmd.Stderr = os.Stderr
 
 	r.logger.Info("Starting varnishlog recorder", "output_file", r.outputFile)
 
 	if err := r.cmd.Start(); err != nil {
+		r.outfile.Close()
 		return fmt.Errorf("failed to start varnishlog: %w", err)
 	}
 
@@ -97,8 +107,14 @@ func (r *Recorder) Stop() error {
 	case <-time.After(5 * time.Second):
 		r.logger.Warn("varnishlog did not exit in time, killing process")
 		if err := r.cmd.Process.Kill(); err != nil {
+			r.outfile.Close()
 			return fmt.Errorf("failed to kill varnishlog: %w", err)
 		}
+	}
+
+	// Close output file
+	if r.outfile != nil {
+		r.outfile.Close()
 	}
 
 	r.running = false
@@ -121,14 +137,13 @@ func (r *Recorder) GetMessages() ([]Message, error) {
 		return nil, fmt.Errorf("log file does not exist: %s", r.outputFile)
 	}
 
-	// Read the binary log file back as text
-	cmd := exec.Command("varnishlog", "-r", r.outputFile)
-	output, err := cmd.Output()
+	// Read the text log file directly (no longer binary)
+	data, err := os.ReadFile(r.outputFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read log file: %w", err)
 	}
 
-	return r.parseMessages(string(output)), nil
+	return r.parseMessages(string(data)), nil
 }
 
 // GetVCLMessages returns only VCL-related messages (VCL_trace, VCL_call, VCL_return)

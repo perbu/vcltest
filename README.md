@@ -1,49 +1,41 @@
 # VCLTest - VCL Testing Framework
 
-VCLTest is a declarative testing framework for Varnish Configuration Language (VCL) that verifies VCL logic with automatic instrumentation and execution tracing.
+VCLTest is a declarative testing framework for Varnish Configuration Language (VCL) that provides automatic execution tracing and clear error reporting.
 
 ## Features
 
-- **Declarative YAML-based tests** - Write tests in YAML format
-- **Automatic VCL instrumentation** - Traces execution flow without manual logging
-- **Mock backend support** - Controlled backend responses for deterministic testing
-- **Pass/fail output** - Shows which VCL lines executed and which assertions failed
-- **Multiple assertions** - Status codes, backend calls, headers, and body content
-- **Multi-test files** - Run multiple tests from a single YAML file
-- **Colored output** - Terminal output with color highlighting
+- **YAML-based tests** - Simple, declarative test format
+- **VCL execution tracing** - See exactly which lines of VCL executed (via Varnish's `feature=+trace`)
+- **Colored error output** - Failed tests show VCL source with green ✓ marks on executed lines
+- **Mock backend** - Controlled backend responses for deterministic testing
+- **Multiple assertions** - Status codes, backend calls, headers, body content
+- **Multi-test files** - Run multiple test cases from a single YAML file
 
 ## Quick Start
+
+### Prerequisites
+
+- Go 1.21 or later
+- Varnish 7.x or later (with `varnishd` and `varnishlog` in PATH)
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/perbu/vcltest.git
 cd vcltest
-
-# Build the binary
 go build -o vcltest ./cmd/vcltest
-
-# Run example tests
-./vcltest examples/basic.yaml
 ```
-
-### Prerequisites
-
-- Go 1.23 or later
-- Varnish 7.x or later installed and available in PATH
-- `varnishd` and `varnishlog` commands available
 
 ### Your First Test
 
-Create a simple VCL file (`hello.vcl`):
+Create a VCL file (`hello.vcl`):
 
 ```vcl
 vcl 4.1;
 
 backend default {
-    .host = "127.0.0.1";
-    .port = "8080";
+    .host = "__BACKEND_HOST__";
+    .port = "__BACKEND_PORT__";
 }
 
 sub vcl_recv {
@@ -54,10 +46,8 @@ sub vcl_recv {
 }
 
 sub vcl_synth {
-    if (resp.status == 200) {
-        set resp.http.Content-Type = "text/plain";
-        set resp.body = "Hello, VCL!";
-    }
+    set resp.http.Content-Type = "text/plain";
+    set resp.body = "Hello, VCL!";
     return (deliver);
 }
 ```
@@ -65,15 +55,19 @@ sub vcl_synth {
 Create a test file (`hello.yaml`):
 
 ```yaml
-name: Hello endpoint test
+name: Hello endpoint returns 200
 vcl: hello.vcl
+
 request:
   url: /hello
+
+backend:
+  status: 200
+  body: "backend response"
+
 expect:
   status: 200
   backend_calls: 0
-  headers:
-    Content-Type: "text/plain"
   body_contains: "Hello"
 ```
 
@@ -88,32 +82,33 @@ Run the test:
 ### Basic Structure
 
 ```yaml
-name: Test name
+name: Test description
 vcl: path/to/file.vcl
+
 request:
-  method: GET           # Optional, defaults to GET
-  url: /path            # Required
-  headers:              # Optional
+  method: GET              # Optional, defaults to GET
+  url: /path               # Required
+  headers:                 # Optional
     Header-Name: value
-  body: "request body"  # Optional
+  body: "request body"     # Optional
 
 backend:
-  status: 200           # Optional, defaults to 200
-  headers:              # Optional
+  status: 200              # Optional, defaults to 200
+  headers:                 # Optional
     Header-Name: value
-  body: "response"      # Optional
+  body: "response"         # Optional
 
 expect:
-  status: 200                    # Required - expected HTTP status
-  backend_calls: 1               # Optional - expected backend requests
+  status: 200                    # Required
+  backend_calls: 1               # Optional - number of backend requests
   headers:                       # Optional - expected response headers
     Header-Name: expected-value
-  body_contains: "text"          # Optional - substring in response body
+  body_contains: "text"          # Optional - substring match
 ```
 
 ### Multiple Tests
 
-Use `---` to separate multiple tests in a single file:
+Use `---` to separate multiple tests:
 
 ```yaml
 name: Test 1
@@ -133,142 +128,109 @@ expect:
   status: 404
 ```
 
-## Usage
-
-```bash
-# Run a single test file
-vcltest test.yaml
-
-# Verbose output (shows VCL execution trace)
-vcltest -v test.yaml
-vcltest --verbose test.yaml
-
-# Disable color output
-vcltest --no-color test.yaml
-
-# Show version
-vcltest --version
-```
-
-## Assertions
-
-VCLTest supports four types of assertions:
-
-### Status Code (Required)
-
-```yaml
-expect:
-  status: 200
-```
-
-Checks that the HTTP response status code matches exactly.
-
-### Backend Calls (Optional)
-
-```yaml
-expect:
-  backend_calls: 1
-```
-
-Verifies the number of backend requests made during the test. Useful for testing cache behavior.
-
-### Headers (Optional)
-
-```yaml
-expect:
-  headers:
-    Content-Type: "application/json"
-    X-Custom-Header: "value"
-```
-
-Checks that specific response headers have the expected values.
-
-### Body Contains (Optional)
-
-```yaml
-expect:
-  body_contains: "expected text"
-```
-
-Verifies that the response body contains the specified substring.
-
 ## Output
 
 ### Passing Tests
 
 ```
-PASS: Test name (45ms)
+Test 1: Hello endpoint returns 200
+  ✓ PASSED
 ```
 
-### Failing Tests
+### Failing Tests with VCL Trace
+
+When a test fails, VCLTest shows which VCL lines executed:
 
 ```
-FAIL: Test name (52ms)
+Test 1: Wrong status expectation
+FAILED: Wrong status expectation
+  ✗ Status code: expected 404, got 200
 
-Failed assertions:
-  - expected status 200, got 404
-    Expected: 200
-    Actual:   404
+VCL Execution Trace:
+    1 | vcl 4.1;
+    2 |
+    3 | backend default {
+    4 |     .host = "127.0.0.1";
+    5 |     .port = "8080";
+    6 | }
+    7 |
+    8 | sub vcl_recv {
+    9 |     # Block admin paths
+✓  10 |     if (req.url ~ "^/admin") {
+   11 |         return (synth(403, "Forbidden"));
+   12 |     }
+   13 |
+   14 |     # Allow API paths
+✓  15 |     if (req.url ~ "^/api/") {
+✓  16 |         return (pass);
+   17 |     }
+   ...
 
-VCL execution:
-  * 1  vcl 4.1;
-  | 2
-  * 3  backend default {
-  * 4      .host = "127.0.0.1";
-  * 5      .port = "8080";
-  * 6  }
-  * 7
-  * 8  sub vcl_recv {
-  * 9      if (req.url == "/test") {
-  | 10         return (synth(200, "OK"));
-  | 11     }
-  * 12     return (pass);
-  * 13 }
+Backend Calls: 1
+VCL Flow: RECV → PASS → DELIVER
 ```
 
-Lines marked with `*` (green in color mode) were executed. Lines marked with `|` were not executed.
+Lines with green ✓ marks were executed. Gray lines were not executed.
+
+## Backend Placeholders
+
+VCLTest automatically replaces these placeholders in your VCL:
+
+- `__BACKEND_HOST__` - Replaced with mock backend host
+- `__BACKEND_PORT__` - Replaced with mock backend port
+
+This allows tests to work without hardcoding mock backend addresses.
+
+## Examples
+
+See `examples/` directory:
+
+- `examples/basic.vcl` + `examples/basic.yaml` - Simple request routing
+- `examples/access-control.vcl` + `examples/access-control.yaml` - Header-based access control
+- `examples/error-demo.vcl` + `examples/error-demo.yaml` - Demonstrates error output
+
+## Architecture
+
+VCLTest uses several packages:
+
+- **pkg/testspec** - YAML test file parser
+- **pkg/runner** - Test orchestration and execution
+- **pkg/varnish** - varnishd process management
+- **pkg/varnishadm** - Varnish CLI protocol implementation
+- **pkg/service** - Service lifecycle coordination
+- **pkg/recorder** - varnishlog capture and parsing
+- **pkg/formatter** - VCL source formatting with execution highlights
+- **pkg/backend** - Mock HTTP backend server
+- **pkg/client** - HTTP client for making test requests
+- **pkg/assertion** - Test expectation verification
+
+## How It Works
+
+1. Start varnishd with `feature=+trace` enabled
+2. Load your VCL (with backend placeholders replaced)
+3. Start varnishlog recorder
+4. Execute HTTP request through Varnish
+5. Stop recorder and parse VCL_trace messages
+6. Check assertions and format output
+7. On failure, show VCL with execution markers
 
 ## Comparison with VTest
-
-VCLTest is inspired by Varnish's VTest but takes a different approach:
 
 | Feature | VCLTest | VTest |
 |---------|---------|-------|
 | **Format** | YAML | Custom DSL |
-| **Backend mocking** | Automatic | Manual configuration |
-| **VCL instrumentation** | Automatic | Manual logging |
-| **Execution trace** | Built-in | Manual analysis |
+| **VCL tracing** | Automatic (feature=+trace) | Manual logging |
+| **Error output** | Colored, annotated VCL | Text logs |
+| **Backend mocking** | Automatic | Manual setup |
 | **Learning curve** | Low | Moderate |
-| **Flexibility** | Focused on common cases | Highly flexible |
+| **Use case** | VCL unit testing | Complex integration testing |
 
-VCLTest supports:
-- VCL validation during development
-- CI/CD integration
-- Standard HTTP request/response testing
+VCLTest is designed for quick, readable VCL unit tests with clear error output. VTest is better for complex scenarios, ESI testing, and low-level protocol testing.
 
-VTest supports:
-- Complex multi-client scenarios
-- Low-level Varnish protocol testing
-- Advanced timing controls
-- ESI testing
+## License
 
-## Examples
+[License TBD]
 
-See the `examples/` directory for working examples:
+## Contributing
 
-- `examples/basic.vcl` - Simple VCL with multiple endpoints
-- `examples/basic.yaml` - Three test cases demonstrating different features
-
-## Architecture
-
-VCLTest consists of several components:
-
-1. **Test Specification Parser** (`pkg/testspec`) - Parses YAML test files
-2. **VCL Instrumenter** (`pkg/instrument`) - Adds trace logging to VCL
-3. **Mock Backend** (`pkg/backend`) - HTTP server for controlled responses
-4. **Varnish Manager** (`pkg/varnish`) - Manages varnishd lifecycle
-5. **Log Parser** (`pkg/varnish/log.go`) - Extracts execution traces
-6. **Test Runner** (`pkg/runner`) - Orchestrates test execution
-7. **Assertion Engine** (`pkg/assertion`) - Evaluates test expectations
-8. **Output Formatter** (`pkg/runner/output.go`) - Formats results
-
+Contributions welcome! Please open an issue or PR.
