@@ -15,6 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/borud/broker"
+	"github.com/perbu/vcltest/pkg/events"
 )
 
 // Server is the data structure used to communicate with varnishadm
@@ -22,6 +25,7 @@ type Server struct {
 	Port           uint16
 	Secret         string
 	logger         *slog.Logger
+	broker         *broker.Broker
 	reqCh          chan varnishRequest
 	banner         string // Stores the Varnish CLI banner received on connection
 	bannerReceived bool   // Tracks if banner has been read for this connection
@@ -56,13 +60,15 @@ const (
 	defaultCmdTimeout = 30 * time.Second // Overall command timeout
 	readWriteTimeout  = 10 * time.Second // Individual socket I/O operations
 	authTimeout       = 5 * time.Second  // Authentication operations
+	publishTimeout    = 1 * time.Second  // Event publishing timeout
 )
 
-func New(port uint16, secret string, logger *slog.Logger) *Server {
+func New(port uint16, secret string, logger *slog.Logger, broker *broker.Broker) *Server {
 	return &Server{
 		Port:   port,
 		Secret: secret,
 		logger: logger,
+		broker: broker,
 		reqCh:  make(chan varnishRequest, 1),
 	}
 }
@@ -193,6 +199,13 @@ func (v *Server) readBanner(c *net.TCPConn) error {
 	env, version := parseBanner(authResponse.payload)
 	v.environment = env
 	v.version = version
+
+	// Publish connection event if broker is available
+	if v.broker != nil {
+		_ = v.broker.Publish("/process", events.EventVarnishdConnected{
+			RemoteAddr: c.RemoteAddr().String(),
+		}, publishTimeout)
+	}
 
 	return nil
 }

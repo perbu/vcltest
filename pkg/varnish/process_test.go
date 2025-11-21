@@ -30,7 +30,7 @@ func TestPrepareWorkspace(t *testing.T) {
 
 	mgr := New(workDir, logger, "")
 
-	err := mgr.PrepareWorkspace("")
+	err := mgr.PrepareWorkspace("test-secret", "")
 	if err != nil {
 		t.Fatalf("PrepareWorkspace failed: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestPrepareWorkspaceWithLicense(t *testing.T) {
 	mgr := New(workDir, logger, "")
 
 	licenseText := "TEST LICENSE"
-	err := mgr.PrepareWorkspace(licenseText)
+	err := mgr.PrepareWorkspace("test-secret", licenseText)
 	if err != nil {
 		t.Fatalf("PrepareWorkspace failed: %v", err)
 	}

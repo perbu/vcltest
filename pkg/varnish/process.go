@@ -2,7 +2,6 @@ package varnish
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"os"
@@ -33,7 +32,18 @@ func New(workDir string, logger *slog.Logger, customVarnishDir string) *Manager 
 }
 
 // PrepareWorkspace sets up the varnish directory, secret file, and license file
-func (m *Manager) PrepareWorkspace(licenseText string) error {
+func (m *Manager) PrepareWorkspace(secret, licenseText string) error {
+	// Create work directory for secret and license files
+	if err := os.MkdirAll(m.workDir, 0755); err != nil {
+		return fmt.Errorf("failed to create work directory %s: %w", m.workDir, err)
+	}
+
+	// Create VCL directory for vcl_path parameter
+	vclDir := filepath.Join(m.workDir, "vcl")
+	if err := os.MkdirAll(vclDir, 0755); err != nil {
+		return fmt.Errorf("failed to create VCL directory %s: %w", vclDir, err)
+	}
+
 	// Create varnish directory with permissions that allow Varnish to read after dropping privileges
 	if err := os.MkdirAll(m.varnishDir, 0755); err != nil {
 		return fmt.Errorf("failed to create varnish directory %s: %w", m.varnishDir, err)
@@ -42,9 +52,9 @@ func (m *Manager) PrepareWorkspace(licenseText string) error {
 		return fmt.Errorf("failed to set permissions on varnish directory %s: %w", m.varnishDir, err)
 	}
 
-	// Generate secret file for varnishadm authentication
-	if err := m.generateSecretFile(); err != nil {
-		return fmt.Errorf("failed to generate secret file: %w", err)
+	// Write secret file for varnishadm authentication
+	if err := m.writeSecretFile(secret); err != nil {
+		return fmt.Errorf("failed to write secret file: %w", err)
 	}
 
 	// Write Varnish Enterprise license file if present
@@ -56,24 +66,18 @@ func (m *Manager) PrepareWorkspace(licenseText string) error {
 	return nil
 }
 
-// generateSecretFile creates a cryptographically secure secret for varnishadm authentication
-func (m *Manager) generateSecretFile() error {
-	// Generate 32 bytes of cryptographically secure random data
-	secretBytes := make([]byte, 32)
-	if _, err := rand.Read(secretBytes); err != nil {
-		return fmt.Errorf("failed to generate random secret: %w", err)
-	}
-
-	// Store the secret as a string for later use
-	m.secret = string(secretBytes)
+// writeSecretFile writes the provided secret to the secret file
+func (m *Manager) writeSecretFile(secret string) error {
+	// Store the secret for later use
+	m.secret = secret
 
 	// Write secret to file with restrictive permissions
 	secretPath := filepath.Join(m.workDir, "secret")
-	if err := os.WriteFile(secretPath, secretBytes, 0600); err != nil {
+	if err := os.WriteFile(secretPath, []byte(secret), 0600); err != nil {
 		return fmt.Errorf("failed to write secret file: %w", err)
 	}
 
-	m.logger.Debug("Generated varnishadm secret file", "path", secretPath)
+	m.logger.Debug("Wrote varnishadm secret file", "path", secretPath)
 	return nil
 }
 
