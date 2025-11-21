@@ -172,7 +172,9 @@ func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages", "error", err)
 		} else {
+			r.logger.Info("DEBUG: VCL messages retrieved", "count", len(messages))
 			summary := recorder.GetTraceSummary(messages)
+			r.logger.Info("DEBUG: Trace summary", "executed_lines", len(summary.ExecutedLines), "backend_calls", summary.BackendCalls, "vcl_calls", len(summary.VCLCalls), "vcl_returns", len(summary.VCLReturns))
 			result.VCLTrace = &VCLTraceInfo{
 				ExecutedLines: summary.ExecutedLines,
 				BackendCalls:  summary.BackendCalls,
