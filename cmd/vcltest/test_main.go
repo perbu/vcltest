@@ -8,16 +8,18 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/perbu/vcltest/pkg/backend"
 	"github.com/perbu/vcltest/pkg/formatter"
 	"github.com/perbu/vcltest/pkg/recorder"
 	"github.com/perbu/vcltest/pkg/runner"
 	"github.com/perbu/vcltest/pkg/service"
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnish"
+	"github.com/perbu/vcltest/pkg/vcl"
 )
 
 // runTests runs the test file
-func runTests(ctx context.Context, testFile string, verbose bool) error {
+func runTests(ctx context.Context, testFile string, verbose bool, cliVCL string) error {
 	// Setup logger
 	logLevel := slog.LevelInfo
 	if verbose {
@@ -26,6 +28,13 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
+
+	// Resolve VCL file path
+	vclPath, err := testspec.ResolveVCL(testFile, cliVCL)
+	if err != nil {
+		return fmt.Errorf("resolving VCL file: %w", err)
+	}
+	logger.Debug("Resolved VCL file", "path", vclPath)
 
 	// Load test specifications
 	logger.Debug("Loading test file", "file", testFile)
@@ -139,6 +148,20 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 	// Set time controller for scenario-based tests
 	testRunner.SetTimeController(manager)
 
+	// Determine backends needed across all tests
+	backendAddresses, mockBackends, err := startAllBackends(tests, logger)
+	if err != nil {
+		return fmt.Errorf("starting backends: %w", err)
+	}
+	defer stopAllBackends(mockBackends, logger)
+
+	// Load VCL once with all backends
+	logger.Debug("Loading shared VCL", "path", vclPath)
+	if err := testRunner.LoadVCL(vclPath, backendAddresses); err != nil {
+		return fmt.Errorf("loading shared VCL: %w", err)
+	}
+	defer testRunner.UnloadVCL()
+
 	// Run tests
 	passed := 0
 	failed := 0
@@ -147,9 +170,19 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 	for i, test := range tests {
 		fmt.Printf("\nTest %d: %s\n", i+1, test.Name)
 
-		result, err := testRunner.RunTest(test)
+		// Nuke the cache before each test to ensure clean state
+		logger.Debug("Nuking cache before test", "test", test.Name)
+		if _, err := varnishadm.BanNukeCache(); err != nil {
+			return fmt.Errorf("failed to nuke cache before test %q: %w", test.Name, err)
+		}
+
+		testStart := time.Now()
+		result, err := testRunner.RunTestWithSharedVCL(test)
+		testDuration := time.Since(testStart)
+
 		if err != nil {
 			fmt.Printf("  ERROR: %v\n", err)
+			logger.Debug("Test failed with error", "test", test.Name, "duration_ms", testDuration.Milliseconds())
 			failed++
 			continue
 		}
@@ -160,6 +193,7 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 			} else {
 				fmt.Printf("  ✓ PASSED\n")
 			}
+			logger.Debug("Test passed", "test", test.Name, "duration_ms", testDuration.Milliseconds())
 			passed++
 		} else {
 			// Display enhanced error output with VCL trace
@@ -185,6 +219,7 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 					fmt.Printf("    - %s\n", errMsg)
 				}
 			}
+			logger.Debug("Test failed", "test", test.Name, "duration_ms", testDuration.Milliseconds())
 			failed++
 		}
 	}
@@ -199,4 +234,59 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 	}
 
 	return nil
+}
+
+// startAllBackends starts all mock backends needed across all tests
+func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[string]vcl.BackendAddress, map[string]*backend.MockBackend, error) {
+	addresses := make(map[string]vcl.BackendAddress)
+	mockBackends := make(map[string]*backend.MockBackend)
+
+	// Collect all unique backend names
+	backendNames := make(map[string]bool)
+	for _, test := range tests {
+		if len(test.Backends) > 0 {
+			for name := range test.Backends {
+				backendNames[name] = true
+			}
+		} else {
+			// Single backend mode
+			backendNames["default"] = true
+		}
+	}
+
+	// Start a mock backend for each name
+	for name := range backendNames {
+		cfg := backend.Config{
+			Status:  200,
+			Headers: make(map[string]string),
+			Body:    "",
+		}
+		mock := backend.New(cfg)
+		addr, err := mock.Start()
+		if err != nil {
+			stopAllBackends(mockBackends, logger)
+			return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
+		}
+
+		host, port, err := vcl.ParseAddress(addr)
+		if err != nil {
+			stopAllBackends(mockBackends, logger)
+			return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
+		}
+
+		mockBackends[name] = mock
+		addresses[name] = vcl.BackendAddress{Host: host, Port: port}
+		logger.Debug("Started shared backend", "name", name, "address", addr)
+	}
+
+	return addresses, mockBackends, nil
+}
+
+// stopAllBackends stops all mock backends
+func stopAllBackends(mockBackends map[string]*backend.MockBackend, logger *slog.Logger) {
+	for name, mock := range mockBackends {
+		if err := mock.Stop(); err != nil {
+			logger.Warn("Failed to stop backend", "name", name, "error", err)
+		}
+	}
 }

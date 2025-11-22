@@ -1,5 +1,4 @@
 name: API routing test
-vcl: examples/routing.vcl
 
 backends:
   api_backend:

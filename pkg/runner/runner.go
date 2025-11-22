@@ -61,6 +61,10 @@ type Runner struct {
 	logger         *slog.Logger
 	recorder       *recorder.Recorder
 	timeController TimeController // Optional: for temporal testing
+
+	// VCL state for shared VCL across tests
+	loadedVCLName   string
+	loadedVCLSource string
 }
 
 // New creates a new test runner with a recorder
@@ -194,17 +198,134 @@ func (bm *backendManager) getTotalCallCount() int {
 	return total
 }
 
-// RunTest executes a single test case
-func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
-	// Check if this is a scenario-based test
-	if test.IsScenario() {
-		return r.runScenarioTest(test)
+// LoadVCL loads VCL file and prepares it for sharing across all tests
+func (r *Runner) LoadVCL(vclPath string, backends map[string]vcl.BackendAddress) error {
+	// Read VCL file
+	vclData, err := os.ReadFile(vclPath)
+	if err != nil {
+		return fmt.Errorf("reading VCL file: %w", err)
 	}
-	return r.runSingleRequestTest(test)
+
+	// Replace backend placeholders
+	modifiedVCL, err := vcl.ReplaceBackends(string(vclData), backends)
+	if err != nil {
+		return fmt.Errorf("replacing backends in VCL: %w", err)
+	}
+
+	// Write modified VCL to temporary file
+	tmpFile, err := os.CreateTemp("", "vcltest-shared-*.vcl")
+	if err != nil {
+		return fmt.Errorf("creating temp VCL file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(modifiedVCL); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("writing temp VCL file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Load VCL into Varnish
+	vclName := "shared-vcl"
+	vclLoadStart := time.Now()
+	resp, err := r.varnishadm.VCLLoad(vclName, tmpFile.Name())
+	if err != nil {
+		return fmt.Errorf("loading VCL into Varnish: %w", err)
+	}
+	if resp.StatusCode() != varnishadm.ClisOk {
+		return fmt.Errorf("VCL compilation failed: %s", resp.Payload())
+	}
+	r.logger.Debug("Shared VCL loaded", "name", vclName, "duration_ms", time.Since(vclLoadStart).Milliseconds())
+
+	// Activate VCL
+	vclUseStart := time.Now()
+	resp, err = r.varnishadm.VCLUse(vclName)
+	if err != nil {
+		return fmt.Errorf("activating VCL: %w", err)
+	}
+	if resp.StatusCode() != varnishadm.ClisOk {
+		return fmt.Errorf("VCL activation failed: %s", resp.Payload())
+	}
+	r.logger.Debug("Shared VCL activated", "name", vclName, "duration_ms", time.Since(vclUseStart).Milliseconds())
+
+	// Store state
+	r.loadedVCLName = vclName
+	r.loadedVCLSource = modifiedVCL
+
+	return nil
+}
+
+// UnloadVCL cleans up the shared VCL
+func (r *Runner) UnloadVCL() error {
+	if r.loadedVCLName == "" {
+		return nil // Nothing to unload
+	}
+
+	// Switch to boot VCL
+	if resp, err := r.varnishadm.VCLUse("boot"); err != nil {
+		r.logger.Warn("Failed to switch to boot VCL", "error", err)
+	} else if resp.StatusCode() != varnishadm.ClisOk {
+		r.logger.Warn("Failed to switch to boot VCL", "status", resp.StatusCode(), "response", resp.Payload())
+	}
+
+	// Discard the shared VCL
+	if resp, err := r.varnishadm.VCLDiscard(r.loadedVCLName); err != nil {
+		r.logger.Warn("Failed to discard VCL", "vcl", r.loadedVCLName, "error", err)
+	} else if resp.StatusCode() != varnishadm.ClisOk {
+		r.logger.Warn("Failed to discard VCL", "vcl", r.loadedVCLName, "status", resp.StatusCode(), "response", resp.Payload())
+	}
+
+	r.loadedVCLName = ""
+	r.loadedVCLSource = ""
+	return nil
+}
+
+// RunTest executes a single test case (legacy method - loads VCL per test)
+func (r *Runner) RunTest(test testspec.TestSpec, vclPath string) (*TestResult, error) {
+	start := time.Now()
+	r.logger.Debug("Starting test execution", "test", test.Name)
+
+	// Check if this is a scenario-based test
+	var result *TestResult
+	var err error
+	if test.IsScenario() {
+		result, err = r.runScenarioTest(test, vclPath)
+	} else {
+		result, err = r.runSingleRequestTest(test, vclPath)
+	}
+
+	duration := time.Since(start)
+	r.logger.Debug("Test execution completed", "test", test.Name, "passed", result != nil && result.Passed, "duration_ms", duration.Milliseconds())
+
+	return result, err
+}
+
+// RunTestWithSharedVCL executes a single test using pre-loaded shared VCL
+func (r *Runner) RunTestWithSharedVCL(test testspec.TestSpec) (*TestResult, error) {
+	if r.loadedVCLName == "" {
+		return nil, fmt.Errorf("no VCL loaded - call LoadVCL first")
+	}
+
+	start := time.Now()
+	r.logger.Debug("Starting test execution with shared VCL", "test", test.Name)
+
+	// Check if this is a scenario-based test
+	var result *TestResult
+	var err error
+	if test.IsScenario() {
+		result, err = r.runScenarioTestWithSharedVCL(test)
+	} else {
+		result, err = r.runSingleRequestTestWithSharedVCL(test)
+	}
+
+	duration := time.Since(start)
+	r.logger.Debug("Test execution completed", "test", test.Name, "passed", result != nil && result.Passed, "duration_ms", duration.Milliseconds())
+
+	return result, err
 }
 
 // runSingleRequestTest executes a traditional single-request test
-func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, error) {
+func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*TestResult, error) {
 	// Start mock backends
 	bm, addresses, err := r.startBackends(test)
 	if err != nil {
@@ -213,7 +334,7 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	defer bm.stopAll()
 
 	// Load VCL file
-	vclData, err := os.ReadFile(test.VCL)
+	vclData, err := os.ReadFile(vclPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading VCL file: %w", err)
 	}
@@ -240,6 +361,7 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	// Load VCL into Varnish
 	// Sanitize VCL name - remove spaces and special characters
 	vclName := sanitizeVCLName(test.Name)
+	vclLoadStart := time.Now()
 	resp, err := r.varnishadm.VCLLoad(vclName, tmpFile.Name())
 	if err != nil {
 		return nil, fmt.Errorf("loading VCL into Varnish: %w", err)
@@ -247,8 +369,10 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	if resp.StatusCode() != varnishadm.ClisOk {
 		return nil, fmt.Errorf("VCL compilation failed: %s", resp.Payload())
 	}
+	r.logger.Debug("VCL loaded", "name", vclName, "duration_ms", time.Since(vclLoadStart).Milliseconds())
 
 	// Activate VCL
+	vclUseStart := time.Now()
 	resp, err = r.varnishadm.VCLUse(vclName)
 	if err != nil {
 		return nil, fmt.Errorf("activating VCL: %w", err)
@@ -256,6 +380,7 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	if resp.StatusCode() != varnishadm.ClisOk {
 		return nil, fmt.Errorf("VCL activation failed: %s", resp.Payload())
 	}
+	r.logger.Debug("VCL activated", "name", vclName, "duration_ms", time.Since(vclUseStart).Milliseconds())
 
 	// Mark current log position before making request
 	var logOffset int64
@@ -267,13 +392,21 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	}
 
 	// Make HTTP request to Varnish
+	requestStart := time.Now()
 	response, err := client.MakeRequest(r.varnishURL, test.Request)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}
+	r.logger.Debug("HTTP request completed", "url", test.Request.URL, "status", response.Status, "duration_ms", time.Since(requestStart).Milliseconds())
 
-	// Give varnishlog time to process and flush writes
-	time.Sleep(500 * time.Millisecond)
+	// Flush varnishlog to ensure logs are written
+	if r.recorder != nil {
+		flushStart := time.Now()
+		if err := r.recorder.Flush(); err != nil {
+			r.logger.Warn("Failed to flush varnishlog", "error", err)
+		}
+		r.logger.Debug("Varnishlog flushed", "duration_ms", time.Since(flushStart).Milliseconds())
+	}
 
 	// Get backends used from varnishlog (for backend_used assertion)
 	var backendsUsed []string
@@ -328,8 +461,78 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	return result, nil
 }
 
+// runSingleRequestTestWithSharedVCL executes a single-request test with pre-loaded VCL
+func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*TestResult, error) {
+	// Mark current log position before making request
+	var logOffset int64
+	var err error
+	if r.recorder != nil {
+		logOffset, err = r.recorder.MarkPosition()
+		if err != nil {
+			r.logger.Warn("Failed to mark log position", "error", err)
+		}
+	}
+
+	// Make HTTP request to Varnish
+	requestStart := time.Now()
+	response, err := client.MakeRequest(r.varnishURL, test.Request)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	r.logger.Debug("HTTP request completed", "url", test.Request.URL, "status", response.Status, "duration_ms", time.Since(requestStart).Milliseconds())
+
+	// Flush varnishlog to ensure logs are written
+	if r.recorder != nil {
+		flushStart := time.Now()
+		if err := r.recorder.Flush(); err != nil {
+			r.logger.Warn("Failed to flush varnishlog", "error", err)
+		}
+		r.logger.Debug("Varnishlog flushed", "duration_ms", time.Since(flushStart).Milliseconds())
+	}
+
+	// Get backends used from varnishlog (for backend_used assertion)
+	var backendsUsed []string
+	if r.recorder != nil && test.Expect.BackendUsed != "" {
+		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
+		if err != nil {
+			r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
+		} else {
+			backendsUsed = recorder.GetBackendsUsed(messages)
+		}
+	}
+
+	// Note: backend call count is not tracked in shared VCL mode (would accumulate across tests)
+	// Users should avoid backend_calls assertions when using shared VCL
+	assertResult := assertion.Check(test.Expect, response, 0, backendsUsed)
+
+	// Prepare test result
+	result := &TestResult{
+		TestName:  test.Name,
+		Passed:    assertResult.Passed,
+		Errors:    assertResult.Errors,
+		VCLSource: r.loadedVCLSource,
+	}
+
+	// If test failed, collect and attach trace information
+	if !assertResult.Passed && r.recorder != nil {
+		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
+		if err != nil {
+			r.logger.Warn("Failed to get VCL messages", "error", err)
+		} else {
+			summary := recorder.GetTraceSummary(messages)
+			result.VCLTrace = &VCLTraceInfo{
+				ExecutedLines: summary.ExecutedLines,
+				BackendCalls:  summary.BackendCalls,
+				VCLFlow:       append(summary.VCLCalls, summary.VCLReturns...),
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // runScenarioTest executes a scenario-based temporal test
-func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
+func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestResult, error) {
 	if r.timeController == nil {
 		return nil, fmt.Errorf("scenario-based tests require time controller to be set")
 	}
@@ -342,7 +545,7 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
 	defer bm.stopAll()
 
 	// Load VCL file
-	vclData, err := os.ReadFile(test.VCL)
+	vclData, err := os.ReadFile(vclPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading VCL file: %w", err)
 	}
@@ -418,8 +621,12 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
 			return nil, fmt.Errorf("step %d: making request: %w", stepIdx+1, err)
 		}
 
-		// Give varnishlog time to process and flush writes
-		time.Sleep(500 * time.Millisecond)
+		// Flush varnishlog to ensure logs are written
+		if r.recorder != nil {
+			if err := r.recorder.Flush(); err != nil {
+				r.logger.Warn("Failed to flush varnishlog", "error", err)
+			}
+		}
 
 		// Get backends used from varnishlog (for backend_used assertion)
 		var backendsUsed []string
@@ -480,6 +687,102 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
 		r.logger.Warn("Failed to discard VCL", "vcl", vclName, "error", err)
 	} else if resp.StatusCode() != varnishadm.ClisOk {
 		r.logger.Warn("Failed to discard VCL", "vcl", vclName, "status", resp.StatusCode(), "response", resp.Payload())
+	}
+
+	return result, nil
+}
+
+// runScenarioTestWithSharedVCL executes a scenario-based test with pre-loaded VCL
+func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResult, error) {
+	if r.timeController == nil {
+		return nil, fmt.Errorf("scenario-based tests require time controller to be set")
+	}
+
+	// Execute scenario steps
+	var allErrors []string
+	var firstFailedStep int = -1
+
+	for stepIdx, step := range test.Scenario {
+		// Parse time offset
+		offset, err := parseDuration(step.At)
+		if err != nil {
+			return nil, fmt.Errorf("step %d: invalid time offset %q: %w", stepIdx+1, step.At, err)
+		}
+
+		// Advance time to this step's offset (absolute from test start)
+		if err := r.timeController.AdvanceTimeBy(offset); err != nil {
+			return nil, fmt.Errorf("step %d: failed to advance time: %w", stepIdx+1, err)
+		}
+
+		r.logger.Debug("Executing scenario step", "step", stepIdx+1, "at", step.At)
+
+		// Mark current log position before making request
+		var stepLogOffset int64
+		if r.recorder != nil {
+			stepLogOffset, err = r.recorder.MarkPosition()
+			if err != nil {
+				r.logger.Warn("Failed to mark log position", "error", err)
+			}
+		}
+
+		// Make HTTP request to Varnish
+		response, err := client.MakeRequest(r.varnishURL, step.Request)
+		if err != nil {
+			return nil, fmt.Errorf("step %d: making request: %w", stepIdx+1, err)
+		}
+
+		// Flush varnishlog to ensure logs are written
+		if r.recorder != nil {
+			if err := r.recorder.Flush(); err != nil {
+				r.logger.Warn("Failed to flush varnishlog", "error", err)
+			}
+		}
+
+		// Get backends used from varnishlog (for backend_used assertion)
+		var backendsUsed []string
+		if r.recorder != nil && step.Expect.BackendUsed != "" {
+			messages, err := r.recorder.GetVCLMessagesSince(stepLogOffset)
+			if err != nil {
+				r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
+			} else {
+				backendsUsed = recorder.GetBackendsUsed(messages)
+			}
+		}
+
+		// Note: backend call count is not tracked in shared VCL mode
+		assertResult := assertion.Check(step.Expect, response, 0, backendsUsed)
+
+		if !assertResult.Passed {
+			if firstFailedStep == -1 {
+				firstFailedStep = stepIdx
+			}
+			for _, err := range assertResult.Errors {
+				allErrors = append(allErrors, fmt.Sprintf("Step %d (at %s): %s", stepIdx+1, step.At, err))
+			}
+		}
+	}
+
+	// Prepare test result
+	result := &TestResult{
+		TestName:  test.Name,
+		Passed:    len(allErrors) == 0,
+		Errors:    allErrors,
+		VCLSource: r.loadedVCLSource,
+	}
+
+	// If test failed, collect and attach trace information
+	if !result.Passed && r.recorder != nil && firstFailedStep >= 0 {
+		messages, err := r.recorder.GetVCLMessages()
+		if err != nil {
+			r.logger.Warn("Failed to get VCL messages", "error", err)
+		} else {
+			summary := recorder.GetTraceSummary(messages)
+			result.VCLTrace = &VCLTraceInfo{
+				ExecutedLines: summary.ExecutedLines,
+				BackendCalls:  summary.BackendCalls,
+				VCLFlow:       append(summary.VCLCalls, summary.VCLReturns...),
+			}
+		}
 	}
 
 	return result, nil

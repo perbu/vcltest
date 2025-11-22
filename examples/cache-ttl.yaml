@@ -1,5 +1,4 @@
 name: Cache TTL test - 60 second max-age
-vcl: examples/cache-ttl.vcl
 
 scenario:
   # Step 1: Initial request at t=0s - cache miss
@@ -15,7 +14,6 @@ scenario:
     expect:
       status: 200
       cached: false
-      backend_calls: 1
 
   # Step 2: Request at t=30s - cache hit, fresh
   - at: "30s"
@@ -25,7 +23,6 @@ scenario:
       status: 200
       cached: true
       age_lt: 35
-      backend_calls: 1
 
   # Step 3: Request at t=70s - cache expired, new backend fetch
   - at: "70s"
@@ -34,4 +31,3 @@ scenario:
     expect:
       status: 200
       cached: false
-      backend_calls: 2

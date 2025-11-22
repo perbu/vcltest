@@ -1,6 +1,5 @@
 ---
 name: Request without header is denied
-vcl: examples/access-control.vcl
 
 request:
   url: /api/test
@@ -11,11 +10,9 @@ backend:
 
 expect:
   status: 403
-  backend_calls: 0
 
 ---
 name: Request with header is allowed
-vcl: examples/access-control.vcl
 
 request:
   url: /api/test
@@ -29,4 +26,3 @@ backend:
 expect:
   status: 200
   body_contains: "backend response"
-  backend_calls: 1

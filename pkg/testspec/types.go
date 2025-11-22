@@ -3,7 +3,6 @@ package testspec
 // TestSpec represents a single test case
 type TestSpec struct {
 	Name     string                 `yaml:"name"`
-	VCL      string                 `yaml:"vcl"`
 	Request  RequestSpec            `yaml:"request,omitempty"`  // Optional: for single-request tests
 	Backend  BackendSpec            `yaml:"backend,omitempty"`  // Optional: for single-request tests (legacy)
 	Backends map[string]BackendSpec `yaml:"backends,omitempty"` // Optional: for multi-backend tests

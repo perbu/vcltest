@@ -174,7 +174,7 @@ Parses YAML test specification files. Supports both single-request and scenario-
 
 **Key types:**
 
-- `TestSpec` - Complete test specification (name, VCL, request/backend/expect OR scenario)
+- `TestSpec` - Complete test specification (name, request/backend/expect OR scenario) - VCL is resolved separately
 - `ScenarioStep` - Single step in temporal test scenario (at, request, backend, expect)
 - `RequestSpec` - HTTP request definition (method, URL, headers, body)
 - `BackendSpec` - Mock backend response (status, headers, body)
@@ -185,23 +185,32 @@ Parses YAML test specification files. Supports both single-request and scenario-
 - `Load()` - Loads and parses YAML file(s), returns slice of TestSpec
 - `ApplyDefaults()` - Sets default values for optional fields (handles both test types)
 - `IsScenario()` - Returns true if test is scenario-based
+- `ResolveVCL()` - Determines VCL file path (priority: CLI flag, then same-named .vcl file)
 
 **Responsibilities:**
 
 - Parse YAML test files (supports multi-document YAML with `---`)
 - Validate test specification structure (single-request OR scenario)
 - Apply sensible defaults (GET method, 200 status, etc.)
+- Resolve VCL file path from CLI or test file name
 - Support cache-specific assertions (cached, age_lt, age_gt, stale) - Phase 2
 - Support scenario-based temporal tests with time offsets - Phase 2
 - Return structured test definitions for runner
 
+**VCL Resolution:**
+
+VCL is no longer specified in test YAML files. Instead:
+1. Use `-vcl <path>` CLI flag (highest priority)
+2. Auto-detect same-named .vcl file (e.g., `tests.yaml` → `tests.vcl`)
+3. Error if neither found
+
 ## pkg/runner
 
-Orchestrates test execution and coordinates all components. Supports both single-request and scenario-based tests.
+Orchestrates test execution and coordinates all components. Supports both single-request and scenario-based tests with shared VCL.
 
 **Key types:**
 
-- `Runner` - Test executor (has varnishadm, varnishURL, workDir, logger, timeController)
+- `Runner` - Test executor (has varnishadm, varnishURL, workDir, logger, timeController, loaded VCL state)
 - `TestResult` - Result of a single test (passed, errors, VCL trace, source)
 - `VCLTraceInfo` - Execution trace data (executed lines, backend calls, VCL flow)
 - `TimeController` - Interface for time manipulation (implemented by service.Manager)
@@ -210,40 +219,54 @@ Orchestrates test execution and coordinates all components. Supports both single
 
 - `New()` - Creates runner with varnishadm interface, varnish URL, workDir, logger
 - `SetTimeController()` - Sets time controller for scenario-based tests
-- `RunTest()` - Executes a single test case end-to-end (dispatches to appropriate method)
-- `runSingleRequestTest()` - Executes traditional single-request test
-- `runScenarioTest()` - Executes scenario-based temporal test (Phase 2)
+- `LoadVCL()` - Loads VCL once with backend placeholders replaced, stores for reuse
+- `UnloadVCL()` - Cleans up shared VCL
+- `RunTestWithSharedVCL()` - Executes test using pre-loaded shared VCL (preferred)
+- `RunTest()` - Legacy method that loads VCL per test (for compatibility)
 
-**Test execution flow (single-request):**
+**Shared VCL approach (new):**
 
-1. Start mock backend server
-2. Replace VCL backend placeholders (`__BACKEND_HOST__`, `__BACKEND_PORT__`)
-3. Load VCL into Varnish via varnishadm
-4. Activate VCL
-5. Make HTTP request through Varnish
-6. Check assertions
-7. Clean up VCL
-8. Return TestResult with trace data (on failure)
+1. VCL is loaded once for all tests in a file
+2. Backend mock servers started once with unified configuration
+3. Each test executes against the same VCL and backends
+4. Significantly faster for multiple tests (10-100x for large VCL files)
+5. Trade-off: VCL state leaks between tests, backend responses cannot vary per test
 
-**Test execution flow (scenario):**
+**Test execution flow (shared VCL):**
 
-1. Start mock backend server (reused across steps)
-2. Load and activate VCL once
-3. For each scenario step:
+1. Resolve VCL path via ResolveVCL()
+2. Start all backend mock servers needed across all tests (once)
+3. Load VCL once via LoadVCL() with backend addresses
+4. For each test:
+   - Make HTTP request through Varnish
+   - Check assertions (backend_calls not supported in shared mode)
+   - Return TestResult with trace data (on failure)
+5. Unload shared VCL and stop backends
+
+**Test execution flow (scenario with shared VCL):**
+
+1. Load VCL once (already loaded)
+2. For each scenario step:
    - Advance time to step's offset (absolute from t0)
    - Make HTTP request
    - Check assertions
-4. Collect errors from all steps
-5. Clean up VCL
-6. Return TestResult with trace data (on failure)
+3. Collect errors from all steps
+4. Return TestResult with trace data (on failure)
 
 **Responsibilities:**
 
 - Coordinate all test components
-- Manage test lifecycle
+- Manage shared VCL lifecycle for performance
 - Execute scenario-based temporal tests with time advancement (Phase 2)
 - Collect VCL execution traces on test failure
 - Provide detailed error information with trace context
+
+**Limitations:**
+
+- Backend call counts not tracked in shared VCL mode (accumulate across tests)
+- VCL state may leak between tests (cache, variables, etc.)
+- Backend responses are uniform across all tests in a file
+- Tests should be designed to be order-independent when possible
 
 ## pkg/backend
 

@@ -31,8 +31,10 @@ func run(ctx context.Context, args []string) error {
 	// Parse flags
 	flags := flag.NewFlagSet("vcltest", flag.ExitOnError)
 	verbose := flags.Bool("verbose", false, "verbose output")
+	flags.BoolVar(verbose, "v", false, "verbose output (shorthand)")
 	configFile := flags.String("config", "vcltest.yaml", "configuration file")
 	showVersion := flags.Bool("version", false, "show version")
+	vclFileFlag := flags.String("vcl", "", "VCL file to use for tests (overrides auto-detection)")
 
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parsing flags: %w", err)
@@ -54,7 +56,7 @@ func run(ctx context.Context, args []string) error {
 	// Determine if input is a test file (.yaml) or VCL file (.vcl)
 	if strings.HasSuffix(inputFile, ".yaml") || strings.HasSuffix(inputFile, ".yml") {
 		// Run tests
-		return runTests(ctx, inputFile, *verbose)
+		return runTests(ctx, inputFile, *verbose, *vclFileFlag)
 	}
 
 	// Otherwise, treat as VCL file (old behavior)

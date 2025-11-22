@@ -24,6 +24,7 @@ func ReplaceBackend(vclContent, mockHost, mockPort string) (string, error) {
 // ReplaceBackends replaces multiple named backend placeholders in VCL
 // Placeholders follow the pattern: __BACKEND_HOST_BACKENDNAME__ and __BACKEND_PORT_BACKENDNAME__
 // where BACKENDNAME is the backend name in uppercase
+// For the "default" backend, also replaces legacy __BACKEND_HOST__ and __BACKEND_PORT__
 func ReplaceBackends(vclContent string, backends map[string]BackendAddress) (string, error) {
 	result := vclContent
 
@@ -31,13 +32,18 @@ func ReplaceBackends(vclContent string, backends map[string]BackendAddress) (str
 		// Convert backend name to uppercase for placeholder matching
 		nameUpper := strings.ToUpper(name)
 
-		// Replace host placeholder
+		// Replace named placeholders
 		hostPlaceholder := fmt.Sprintf("__BACKEND_HOST_%s__", nameUpper)
 		result = strings.ReplaceAll(result, hostPlaceholder, addr.Host)
 
-		// Replace port placeholder
 		portPlaceholder := fmt.Sprintf("__BACKEND_PORT_%s__", nameUpper)
 		result = strings.ReplaceAll(result, portPlaceholder, addr.Port)
+
+		// For "default" backend, also replace legacy unnamed placeholders
+		if name == "default" {
+			result = strings.ReplaceAll(result, "__BACKEND_HOST__", addr.Host)
+			result = strings.ReplaceAll(result, "__BACKEND_PORT__", addr.Port)
+		}
 	}
 
 	return result, nil

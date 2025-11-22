@@ -37,6 +37,11 @@ func New(workDir string, logger *slog.Logger, customVarnishDir string) *Manager 
 
 // PrepareWorkspace sets up the varnish directory, secret file, and license file
 func (m *Manager) PrepareWorkspace(secret, licenseText string) error {
+	start := time.Now()
+	defer func() {
+		m.logger.Debug("PrepareWorkspace completed", "duration_ms", time.Since(start).Milliseconds())
+	}()
+
 	// Create work directory for secret and license files
 	if err := os.MkdirAll(m.workDir, 0755); err != nil {
 		return fmt.Errorf("failed to create work directory %s: %w", m.workDir, err)
@@ -102,6 +107,8 @@ func (m *Manager) writeLicenseFile(licenseText string) error {
 
 // Start starts the varnishd process with the given arguments
 func (m *Manager) Start(ctx context.Context, varnishCmd string, args []string, timeConfig *TimeConfig) error {
+	start := time.Now()
+
 	// Find varnishd executable if not specified
 	if varnishCmd == "" {
 		var err error
@@ -138,10 +145,12 @@ func (m *Manager) Start(ctx context.Context, varnishCmd string, args []string, t
 
 	// Wait for Varnish to exit
 	err := cmd.Wait()
+	duration := time.Since(start)
 	if err != nil {
+		m.logger.Debug("Varnish process failed", "duration_ms", duration.Milliseconds())
 		return fmt.Errorf("varnish process failed: %w", err)
 	} else {
-		m.logger.Debug("Varnish process exited successfully")
+		m.logger.Debug("Varnish process exited successfully", "duration_ms", duration.Milliseconds())
 	}
 
 	return nil

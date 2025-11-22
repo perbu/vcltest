@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -125,6 +126,29 @@ func (r *Recorder) Stop() error {
 // IsRunning returns whether the recorder is currently recording
 func (r *Recorder) IsRunning() bool {
 	return r.running
+}
+
+// Flush forces varnishlog to flush its buffer by sending SIGUSR1
+func (r *Recorder) Flush() error {
+	if !r.running {
+		return fmt.Errorf("recorder is not running")
+	}
+
+	if r.cmd == nil || r.cmd.Process == nil {
+		return fmt.Errorf("no process to flush")
+	}
+
+	// Send SIGUSR1 to force varnishlog to flush
+	if err := r.cmd.Process.Signal(os.Signal(syscall.SIGUSR1)); err != nil {
+		return fmt.Errorf("failed to send SIGUSR1 to varnishlog: %w", err)
+	}
+
+	r.logger.Debug("Flushed varnishlog buffer")
+
+	// Give it a tiny moment to flush to disk
+	time.Sleep(10 * time.Millisecond)
+
+	return nil
 }
 
 // MarkPosition records the current log file position for later reading

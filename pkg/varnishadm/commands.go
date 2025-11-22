@@ -42,18 +42,30 @@ func (v *Server) PanicClear() (VarnishResponse, error) {
 
 // VCLLoad loads a VCL configuration from a file
 func (v *Server) VCLLoad(name, path string) (VarnishResponse, error) {
+	start := time.Now()
+	defer func() {
+		v.logger.Debug("VCLLoad completed", "name", name, "duration_ms", time.Since(start).Milliseconds())
+	}()
 	cmd := fmt.Sprintf("vcl.load %s %s", name, path)
 	return v.Exec(cmd)
 }
 
 // VCLUse switches to using the specified VCL configuration
 func (v *Server) VCLUse(name string) (VarnishResponse, error) {
+	start := time.Now()
+	defer func() {
+		v.logger.Debug("VCLUse completed", "name", name, "duration_ms", time.Since(start).Milliseconds())
+	}()
 	cmd := fmt.Sprintf("vcl.use %s", name)
 	return v.Exec(cmd)
 }
 
 // VCLDiscard discards a VCL configuration
 func (v *Server) VCLDiscard(name string) (VarnishResponse, error) {
+	start := time.Now()
+	defer func() {
+		v.logger.Debug("VCLDiscard completed", "name", name, "duration_ms", time.Since(start).Milliseconds())
+	}()
 	cmd := fmt.Sprintf("vcl.discard %s", name)
 	return v.Exec(cmd)
 }
@@ -205,4 +217,11 @@ func (v *Server) TLSCertRollback() (VarnishResponse, error) {
 // TLSCertReload reloads all TLS certificates
 func (v *Server) TLSCertReload() (VarnishResponse, error) {
 	return v.Exec("tls.cert.reload")
+}
+
+// Ban commands
+
+// BanNukeCache nukes the entire cache by issuing a ban that matches everything
+func (v *Server) BanNukeCache() (VarnishResponse, error) {
+	return v.Exec("ban ~ .")
 }

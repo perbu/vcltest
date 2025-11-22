@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -59,9 +61,6 @@ func validate(test *TestSpec) error {
 	if test.Name == "" {
 		return fmt.Errorf("test name is required")
 	}
-	if test.VCL == "" {
-		return fmt.Errorf("vcl field is required")
-	}
 
 	// Check if this is a scenario-based test or single-request test
 	isScenario := len(test.Scenario) > 0
@@ -101,4 +100,29 @@ func validate(test *TestSpec) error {
 	}
 
 	return nil
+}
+
+// ResolveVCL determines the VCL file path to use for tests.
+// Priority: 1) CLI flag (-vcl), 2) Same-named .vcl file
+func ResolveVCL(testFilePath string, cliVCL string) (string, error) {
+	// Priority 1: CLI flag
+	if cliVCL != "" {
+		if _, err := os.Stat(cliVCL); err != nil {
+			return "", fmt.Errorf("VCL file specified via -vcl flag not found: %s", cliVCL)
+		}
+		return cliVCL, nil
+	}
+
+	// Priority 2: Same-named .vcl file
+	testDir := filepath.Dir(testFilePath)
+	testBase := filepath.Base(testFilePath)
+	testName := strings.TrimSuffix(testBase, filepath.Ext(testBase))
+	vclPath := filepath.Join(testDir, testName+".vcl")
+
+	if _, err := os.Stat(vclPath); err == nil {
+		return vclPath, nil
+	}
+
+	// No VCL found
+	return "", fmt.Errorf("no VCL file found: tried -vcl flag and %s", vclPath)
 }

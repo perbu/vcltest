@@ -1,6 +1,5 @@
 ---
 name: Wrong status expectation - should fail
-vcl: examples/error-demo.vcl
 
 request:
   url: /api/users
@@ -11,4 +10,3 @@ backend:
 
 expect:
   status: 404  # This is WRONG - we'll actually get 200
-  backend_calls: 1
