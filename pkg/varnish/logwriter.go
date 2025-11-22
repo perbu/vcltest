@@ -38,7 +38,7 @@ func (lw *logWriter) Write(p []byte) (n int, err error) {
 			level = slog.LevelDebug
 			line = strings.TrimSpace(strings.TrimPrefix(line, "Debug:"))
 		case strings.HasPrefix(line, "Info:"):
-			level = slog.LevelInfo
+			level = slog.LevelDebug
 			line = strings.TrimSpace(strings.TrimPrefix(line, "Info:"))
 		case strings.HasPrefix(line, "Warning:") || strings.HasPrefix(line, "Warn:"):
 			level = slog.LevelWarn
@@ -47,11 +47,11 @@ func (lw *logWriter) Write(p []byte) (n int, err error) {
 			level = slog.LevelError
 			line = strings.TrimSpace(strings.TrimPrefix(line, "Error:"))
 		case strings.HasPrefix(line, "Child ") && (strings.Contains(line, "Started") || strings.Contains(line, "said")):
-			// Varnish child process status - treat as info
-			level = slog.LevelInfo
+			// Varnish child process status - treat as debug
+			level = slog.LevelDebug
 		default:
-			// Default to info level for other varnishd output
-			level = slog.LevelInfo
+			// Default to debug level for other varnishd output
+			level = slog.LevelDebug
 		}
 		// Log with source attribution
 		lw.logger.Log(context.Background(), level, line, "source", lw.source)

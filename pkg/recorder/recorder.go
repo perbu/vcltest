@@ -47,18 +47,26 @@ func (r *Recorder) Start() error {
 		r.logger.Warn("Failed to remove old log file", "error", err)
 	}
 
-	// Start varnishlog in background
-	// Use shell to handle output redirection to ensure proper buffering
-	cmdStr := fmt.Sprintf("varnishlog -n %s > %s 2>&1", r.workDir, r.outputFile)
-	r.cmd = exec.Command("/bin/sh", "-c", cmdStr)
+	// Create output file
+	outFile, err := os.Create(r.outputFile)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
 
-	r.logger.Info("Starting varnishlog recorder", "output_file", r.outputFile, "cmd", cmdStr)
+	// Start varnishlog directly (no shell wrapper)
+	r.cmd = exec.Command("varnishlog", "-n", r.workDir)
+	r.cmd.Stdout = outFile
+	r.cmd.Stderr = outFile
+
+	r.logger.Debug("Starting varnishlog recorder", "output_file", r.outputFile, "work_dir", r.workDir)
 
 	if err := r.cmd.Start(); err != nil {
+		outFile.Close()
 		return fmt.Errorf("failed to start varnishlog: %w", err)
 	}
 
 	r.running = true
+	r.outFile = outFile
 
 	// Give varnishlog a moment to start
 	time.Sleep(100 * time.Millisecond)
@@ -72,9 +80,9 @@ func (r *Recorder) Stop() error {
 		return fmt.Errorf("recorder is not running")
 	}
 
-	r.logger.Info("Stopping varnishlog recorder")
+	r.logger.Debug("Stopping varnishlog recorder")
 
-	// Send interrupt signal to gracefully stop varnishlog
+	// Send interrupt signal to process group to ensure varnishlog receives it
 	if err := r.cmd.Process.Signal(os.Interrupt); err != nil {
 		return fmt.Errorf("failed to signal varnishlog: %w", err)
 	}
@@ -90,14 +98,23 @@ func (r *Recorder) Stop() error {
 		if err != nil {
 			r.logger.Warn("varnishlog exited with error", "error", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(1 * time.Second):
 		r.logger.Warn("varnishlog did not exit in time, killing process")
 		if err := r.cmd.Process.Kill(); err != nil {
 			return fmt.Errorf("failed to kill varnishlog: %w", err)
 		}
+		// Wait for kill to complete
+		<-done
 	}
 
 	r.running = false
+
+	// Close output file
+	if r.outFile != nil {
+		if err := r.outFile.Close(); err != nil {
+			r.logger.Warn("Failed to close output file", "error", err)
+		}
+	}
 
 	// Give file system a moment to flush writes
 	time.Sleep(100 * time.Millisecond)

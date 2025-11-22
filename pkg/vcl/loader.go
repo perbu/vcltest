@@ -45,7 +45,7 @@ func (l *Loader) Start() {
 	go func() {
 		for msg := range subscriber.Messages() {
 			if _, ok := msg.Payload.(events.EventVarnishdConnected); ok {
-				l.logger.Info("Varnishd connected, loading VCL", "path", l.vclPath)
+				l.logger.Debug("Varnishd connected, loading VCL", "path", l.vclPath)
 				if err := l.loadVCL(); err != nil {
 					_ = l.broker.Publish("/process", events.EventProcessError{
 						Component: "vcl-loader",
@@ -89,20 +89,23 @@ func (l *Loader) loadVCL() error {
 		}
 	}()
 
-	// Load VCL
-	l.logger.Info("Loading VCL", "name", l.vclName, "path", absPath)
-	resp, err := l.varnishadm.VCLLoad(l.vclName, absPath)
-	if err != nil {
-		return fmt.Errorf("failed to load VCL: %w", err)
+	// Skip loading if VCL name is "boot" - varnishd already loaded it via -f flag
+	if l.vclName != "boot" {
+		l.logger.Debug("Loading VCL", "name", l.vclName, "path", absPath)
+		resp, err := l.varnishadm.VCLLoad(l.vclName, absPath)
+		if err != nil {
+			return fmt.Errorf("failed to load VCL: %w", err)
+		}
+		if resp.StatusCode() != varnishadm.ClisOk {
+			return fmt.Errorf("VCL compilation failed (status %d): %s", resp.StatusCode(), resp.Payload())
+		}
+		l.logger.Debug("VCL loaded successfully", "name", l.vclName)
+	} else {
+		l.logger.Debug("VCL already loaded by varnishd -f flag", "name", l.vclName)
 	}
-	if resp.StatusCode() != varnishadm.ClisOk {
-		return fmt.Errorf("VCL compilation failed (status %d): %s", resp.StatusCode(), resp.Payload())
-	}
-
-	l.logger.Info("VCL loaded successfully", "name", l.vclName)
 
 	// Activate VCL
-	resp, err = l.varnishadm.VCLUse(l.vclName)
+	resp, err := l.varnishadm.VCLUse(l.vclName)
 	if err != nil {
 		return fmt.Errorf("failed to activate VCL: %w", err)
 	}
@@ -110,7 +113,7 @@ func (l *Loader) loadVCL() error {
 		return fmt.Errorf("VCL activation failed (status %d): %s", resp.StatusCode(), resp.Payload())
 	}
 
-	l.logger.Info("VCL activated", "name", l.vclName)
+	l.logger.Debug("VCL activated", "name", l.vclName)
 
 	// Get VCL mapping (config ID to filename)
 	mapping, err := l.varnishadm.VCLShowStructured(l.vclName)

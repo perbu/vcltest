@@ -40,7 +40,7 @@ func (s *Starter) Start() {
 	go func() {
 		for msg := range subscriber.Messages() {
 			if evt, ok := msg.Payload.(events.EventVCLLoaded); ok {
-				s.logger.Info("VCL loaded, starting cache process")
+				s.logger.Debug("VCL loaded, starting cache process")
 				// Store the VCL mapping for later use (type assert from any)
 				if mapping, ok := evt.Mapping.(*varnishadm.VCLShowResult); ok {
 					s.vclMapping = mapping
@@ -58,18 +58,21 @@ func (s *Starter) Start() {
 
 // startCache starts the cache process and publishes EventCacheStarted
 func (s *Starter) startCache() error {
-	s.logger.Info("Starting cache process")
+	s.logger.Debug("Starting cache process")
 
 	resp, err := s.varnishadm.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start cache: %w", err)
 	}
 
-	if resp.StatusCode() != varnishadm.ClisOk {
+	// Status 300 means child is already running (varnishd -f auto-starts it)
+	if resp.StatusCode() == 300 {
+		s.logger.Debug("Cache process already running")
+	} else if resp.StatusCode() != varnishadm.ClisOk {
 		return fmt.Errorf("cache start failed (status %d): %s", resp.StatusCode(), resp.Payload())
+	} else {
+		s.logger.Debug("Cache process started successfully")
 	}
-
-	s.logger.Info("Cache process started successfully")
 
 	// Publish EventCacheStarted
 	_ = s.broker.Publish("/process", events.EventCacheStarted{}, publishTimeout)

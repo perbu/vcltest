@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"log/slog"
+	"os"
 	"os/exec"
 )
 
@@ -50,6 +51,7 @@ type BackendCall struct {
 type Recorder struct {
 	workDir    string
 	outputFile string
+	outFile    *os.File
 	cmd        *exec.Cmd
 	logger     *slog.Logger
 	running    bool

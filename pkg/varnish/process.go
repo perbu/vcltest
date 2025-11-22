@@ -92,7 +92,7 @@ func (m *Manager) writeLicenseFile(licenseText string) error {
 		return fmt.Errorf("failed to write license file: %w", err)
 	}
 
-	m.logger.Info("Wrote Varnish Enterprise license file", "path", licensePath)
+	m.logger.Debug("Wrote Varnish Enterprise license file", "path", licensePath)
 	return nil
 }
 
@@ -107,7 +107,7 @@ func (m *Manager) Start(ctx context.Context, varnishCmd string, args []string) e
 		}
 	}
 
-	m.logger.Info("Starting varnishd", "cmd", varnishCmd, "args", args)
+	m.logger.Debug("Starting varnishd", "cmd", varnishCmd, "args", args)
 
 	// Create the command, ctx lets us cancel and kill varnishd
 	cmd := exec.CommandContext(ctx, varnishCmd, args...)
@@ -130,7 +130,7 @@ func (m *Manager) Start(ctx context.Context, varnishCmd string, args []string) e
 	if err != nil {
 		return fmt.Errorf("varnish process failed: %w", err)
 	} else {
-		m.logger.Info("Varnish process exited successfully")
+		m.logger.Debug("Varnish process exited successfully")
 	}
 
 	return nil

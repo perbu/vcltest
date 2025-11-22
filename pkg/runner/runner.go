@@ -175,8 +175,18 @@ func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
 		}
 	}
 
-	// Clean up VCL
-	_, _ = r.varnishadm.VCLDiscard(vclName)
+	// Clean up VCL - must switch to boot before discarding active VCL
+	if resp, err := r.varnishadm.VCLUse("boot"); err != nil {
+		r.logger.Warn("Failed to switch to boot VCL", "error", err)
+	} else if resp.StatusCode() != varnishadm.ClisOk {
+		r.logger.Warn("Failed to switch to boot VCL", "status", resp.StatusCode(), "response", resp.Payload())
+	}
+
+	if resp, err := r.varnishadm.VCLDiscard(vclName); err != nil {
+		r.logger.Warn("Failed to discard VCL", "vcl", vclName, "error", err)
+	} else if resp.StatusCode() != varnishadm.ClisOk {
+		r.logger.Warn("Failed to discard VCL", "vcl", vclName, "status", resp.StatusCode(), "response", resp.Payload())
+	}
 
 	return result, nil
 }

@@ -28,13 +28,13 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 	}))
 
 	// Load test specifications
-	logger.Info("Loading test file", "file", testFile)
+	logger.Debug("Loading test file", "file", testFile)
 	tests, err := testspec.Load(testFile)
 	if err != nil {
 		return fmt.Errorf("loading test file: %w", err)
 	}
 
-	logger.Info("Loaded tests", "count", len(tests))
+	logger.Debug("Loaded tests", "count", len(tests))
 
 	// Create temporary directories for Varnish
 	workDir, err := os.MkdirTemp("", "vcltest-work-*")
@@ -93,8 +93,13 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 	}()
 
 	// Wait for services to be ready
-	logger.Info("Waiting for Varnish to be ready...")
-	time.Sleep(2 * time.Second) // TODO: proper readiness check
+	logger.Debug("Waiting for Varnish to be ready...")
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("varnish failed to start: %w", err)
+	case <-time.After(2 * time.Second):
+		// Services appear to be running, continue
+	}
 
 	// Get varnishadm interface
 	varnishadm := manager.GetVarnishadm()

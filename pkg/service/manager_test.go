@@ -24,6 +24,7 @@ func TestNewManager(t *testing.T) {
 				VarnishadmPort: 6082,
 				Secret:         "test-secret",
 				VarnishCmd:     "varnishd",
+				VCLPath:        "/tmp/test.vcl",
 				VarnishConfig: &varnish.Config{
 					WorkDir:    "/tmp/test",
 					VarnishDir: "/tmp/test/varnish",
@@ -101,6 +102,7 @@ func TestManagerGetters(t *testing.T) {
 		VarnishadmPort: 6082,
 		Secret:         "test-secret",
 		VarnishCmd:     "varnishd",
+		VCLPath:        "/tmp/test.vcl",
 		VarnishConfig: &varnish.Config{
 			WorkDir:    "/tmp/test",
 			VarnishDir: "/tmp/test/varnish",
@@ -131,6 +133,7 @@ func TestManagerStartContextCancellation(t *testing.T) {
 		VarnishadmPort: 16082, // Use high port to avoid conflicts
 		Secret:         "test-secret",
 		VarnishCmd:     "varnishd",
+		VCLPath:        "/tmp/test.vcl",
 		VarnishConfig: &varnish.Config{
 			WorkDir:    workDir,
 			VarnishDir: workDir + "/varnish",

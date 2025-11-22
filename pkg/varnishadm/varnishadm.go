@@ -90,7 +90,7 @@ func (v *Server) Run(ctx context.Context) error {
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				v.logger.Info("context canceled, stopping varnishadm server")
+				v.logger.Debug("context canceled, stopping varnishadm server")
 				return nil
 			default:
 				return fmt.Errorf("listener.Accept(): %w", err)
@@ -137,7 +137,14 @@ func (v *Server) handleConnection(ctx context.Context, conn net.Conn) error {
 				return fmt.Errorf("readFromConnection: %w", err)
 			}
 			if resp.statusCode != ClisOk {
-				v.logger.Warn("command failed", "command", req.command, "status", resp.statusCode, "payload", resp.payload)
+				// Don't warn for expected "already exists" or "already running" conditions
+				if resp.statusCode != 106 && resp.statusCode != 300 {
+					v.logger.Warn("command failed", "command", req.command, "status", resp.statusCode, "payload", truncatePayload(resp.payload, 200))
+				} else {
+					v.logger.Debug("command returned non-fatal status", "command", req.command, "status", resp.statusCode, "payload", truncatePayload(resp.payload, 100))
+				}
+			} else {
+				v.logger.Debug("command succeeded", "command", req.command, "status", resp.statusCode)
 			}
 			req.responseChan <- resp
 		}
@@ -253,10 +260,15 @@ func (v *Server) Exec(cmd string) (VarnishResponse, error) {
 	select {
 	case resp := <-respCh:
 		if resp.statusCode != ClisOk {
-			v.logger.Error("Varnishadm command failed", "command", cmd, "status", resp.statusCode, "response", resp.payload)
-			return VarnishResponse{}, fmt.Errorf("command failed: %s", resp.payload)
+			// Don't warn for expected "already exists" or "already running" conditions
+			if resp.statusCode != 106 && resp.statusCode != 300 {
+				v.logger.Warn("command failed", "command", cmd, "status", resp.statusCode, "payload", truncatePayload(resp.payload, 200))
+			} else {
+				v.logger.Debug("command returned non-fatal status", "command", cmd, "status", resp.statusCode, "payload", truncatePayload(resp.payload, 100))
+			}
+		} else {
+			v.logger.Debug("command succeeded", "command", cmd, "status", resp.statusCode)
 		}
-		v.logger.Debug("Varnishadm command succeeded", "command", cmd, "status", resp.statusCode, "payload", resp.payload, "response", resp.payload)
 		return resp, nil
 	case <-time.After(defaultCmdTimeout):
 		v.logger.Error("Varnishadm command timed out", "command", cmd, "timeout", defaultCmdTimeout)
@@ -380,4 +392,13 @@ func (v *Server) readFromConnection(conn *net.TCPConn, timeout time.Duration) (s
 	body := string(bodyWithNewline[:bodyLen])
 
 	return body, status, nil
+}
+
+// truncatePayload truncates a payload for logging, keeping it readable
+func truncatePayload(payload string, maxLen int) string {
+	if len(payload) <= maxLen {
+		return payload
+	}
+	// Show first part and indicate truncation
+	return payload[:maxLen] + "... (truncated, " + fmt.Sprintf("%d", len(payload)) + " bytes total)"
 }

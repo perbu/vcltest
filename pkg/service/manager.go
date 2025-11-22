@@ -74,7 +74,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	errCh := make(chan error, 2)
 
 	// Start varnishadm server in a goroutine
-	m.logger.Info("Starting varnishadm server", "port", m.config.VarnishadmPort)
+	m.logger.Debug("Starting varnishadm server", "port", m.config.VarnishadmPort)
 	go func() {
 		if err := m.varnishadm.Run(ctx); err != nil {
 			errCh <- fmt.Errorf("varnishadm server failed: %w", err)
@@ -87,7 +87,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	time.Sleep(100 * time.Millisecond)
 
 	// Prepare varnish workspace (directories, secret file, license)
-	m.logger.Info("Preparing varnish workspace")
+	m.logger.Debug("Preparing varnish workspace")
 	if err := m.varnishManager.PrepareWorkspace(m.config.Secret, m.config.VarnishConfig.License.Text); err != nil {
 		return fmt.Errorf("failed to prepare varnish workspace: %w", err)
 	}
@@ -96,7 +96,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	args := varnish.BuildArgs(m.config.VarnishConfig)
 
 	// Start varnish in a goroutine
-	m.logger.Info("Starting varnish daemon", "cmd", m.config.VarnishCmd)
+	m.logger.Debug("Starting varnish daemon", "cmd", m.config.VarnishCmd)
 	go func() {
 		if err := m.varnishManager.Start(ctx, m.config.VarnishCmd, args); err != nil {
 			errCh <- fmt.Errorf("varnish daemon failed: %w", err)
@@ -111,7 +111,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		// Context was cancelled, graceful shutdown
-		m.logger.Info("Context cancelled, shutting down services")
+		m.logger.Debug("Context cancelled, shutting down services")
 		return ctx.Err()
 	}
 }
