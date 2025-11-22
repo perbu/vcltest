@@ -18,7 +18,7 @@ type Manager struct {
 	secret          string
 	logger          *slog.Logger
 	timeControlFile string    // Path to faketime control file
-	lastTimestamp   time.Time // Track last set time for forward-only validation
+	testStartTime   time.Time // Test start time (t0) - all offsets are relative to this
 }
 
 // New creates a new Varnish manager
@@ -155,21 +155,10 @@ func (m *Manager) setupFaketime(cmd *exec.Cmd, timeConfig *TimeConfig) error {
 		return err
 	}
 
-	// Setup control file
-	controlFile := timeConfig.ControlFile
-	if controlFile == "" {
-		controlFile, err = m.SetupTimeControl(timeConfig.StartTime)
-		if err != nil {
-			return err
-		}
-	} else {
-		m.timeControlFile = controlFile
-		// Parse StartTime to set lastTimestamp for validation
-		t, err := time.Parse("2006-01-02 15:04:05", timeConfig.StartTime)
-		if err != nil {
-			return fmt.Errorf("invalid start time: %w", err)
-		}
-		m.lastTimestamp = t
+	// Initialize control file with current time as t0
+	controlFile, err := m.initTimeControl()
+	if err != nil {
+		return err
 	}
 
 	// Add faketime environment variables
@@ -195,7 +184,7 @@ func (m *Manager) setupFaketime(cmd *exec.Cmd, timeConfig *TimeConfig) error {
 		return fmt.Errorf("faketime not supported on %s", runtime.GOOS)
 	}
 
-	m.logger.Debug("Faketime enabled", "lib_path", libPath, "control_file", controlFile, "start_time", timeConfig.StartTime)
+	m.logger.Debug("Faketime enabled", "lib_path", libPath, "control_file", controlFile, "t0", m.testStartTime.Format("2006-01-02 15:04:05"))
 
 	return nil
 }
@@ -220,14 +209,11 @@ func (m *Manager) GetLicensePath() string {
 	return filepath.Join(m.workDir, "varnish-enterprise.lic")
 }
 
-// SetupTimeControl initializes the faketime control file with the start time
+// initTimeControl initializes the faketime control file with current time as t0
 // Returns the control file path or error
-func (m *Manager) SetupTimeControl(startTime string) (string, error) {
-	// Parse startTime string to time.Time
-	t, err := time.Parse("2006-01-02 15:04:05", startTime)
-	if err != nil {
-		return "", fmt.Errorf("invalid start time format (expected 'YYYY-MM-DD HH:MM:SS'): %w", err)
-	}
+func (m *Manager) initTimeControl() (string, error) {
+	// Use current real time as test start time (t0)
+	m.testStartTime = time.Now()
 
 	// Create control file path
 	controlFile := filepath.Join(m.workDir, "faketime.control")
@@ -239,45 +225,34 @@ func (m *Manager) SetupTimeControl(startTime string) (string, error) {
 	}
 	f.Close()
 
-	// Set file modification time using os.Chtimes
-	if err := os.Chtimes(controlFile, t, t); err != nil {
+	// Set file modification time to t0
+	if err := os.Chtimes(controlFile, m.testStartTime, m.testStartTime); err != nil {
 		return "", fmt.Errorf("failed to set control file time: %w", err)
 	}
 
 	m.timeControlFile = controlFile
-	m.lastTimestamp = t
-	m.logger.Debug("Faketime control file created", "path", controlFile, "time", startTime)
+	m.logger.Debug("Faketime control file created", "path", controlFile, "t0", m.testStartTime.Format("2006-01-02 15:04:05"))
 
 	return controlFile, nil
 }
 
-// AdvanceTime updates the control file to advance time forward
-// timeStr format: "2006-01-02 15:04:05" (e.g., "2026-05-22 08:30:30")
-// Returns error if time would go backwards
-func (m *Manager) AdvanceTime(timeStr string) error {
+// AdvanceTimeBy sets the fake time to testStartTime + offset
+// offset is the duration from test start (t0), e.g., 5*time.Second means "5 seconds after test start"
+// This accounts for real time spent in test execution
+func (m *Manager) AdvanceTimeBy(offset time.Duration) error {
 	if m.timeControlFile == "" {
 		return fmt.Errorf("time control not initialized")
 	}
 
-	// Parse new time
-	newTime, err := time.Parse("2006-01-02 15:04:05", timeStr)
-	if err != nil {
-		return fmt.Errorf("invalid time format (expected 'YYYY-MM-DD HH:MM:SS'): %w", err)
-	}
-
-	// Enforce forward-only time movement
-	if !newTime.After(m.lastTimestamp) {
-		return fmt.Errorf("time must move forward: current=%s, requested=%s",
-			m.lastTimestamp.Format("2006-01-02 15:04:05"), timeStr)
-	}
+	// Calculate target fake time: t0 + offset
+	targetFakeTime := m.testStartTime.Add(offset)
 
 	// Update control file mtime
-	if err := os.Chtimes(m.timeControlFile, newTime, newTime); err != nil {
+	if err := os.Chtimes(m.timeControlFile, targetFakeTime, targetFakeTime); err != nil {
 		return fmt.Errorf("failed to update control file time: %w", err)
 	}
 
-	m.lastTimestamp = newTime
-	m.logger.Debug("Advanced fake time", "new_time", timeStr)
+	m.logger.Debug("Advanced fake time", "offset", offset, "fake_time", targetFakeTime.Format("2006-01-02 15:04:05"))
 
 	return nil
 }

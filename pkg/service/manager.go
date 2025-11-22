@@ -131,9 +131,9 @@ func (m *Manager) GetCacheStarter() *cache.Starter {
 	return m.cacheStarter
 }
 
-// AdvanceTime advances the fake time (if faketime is enabled)
-// timeStr format: "2006-01-02 15:04:05" (e.g., "2026-05-22 08:30:30")
-// Returns error if time control is not enabled or if time would go backwards
-func (m *Manager) AdvanceTime(timeStr string) error {
-	return m.varnishManager.AdvanceTime(timeStr)
+// AdvanceTimeBy advances the fake time to testStartTime + offset (if faketime is enabled)
+// offset is relative to test start (t0), e.g., 5*time.Second means "5 seconds after test start"
+// Returns error if time control is not enabled
+func (m *Manager) AdvanceTimeBy(offset time.Duration) error {
+	return m.varnishManager.AdvanceTimeBy(offset)
 }

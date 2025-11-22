@@ -163,16 +163,19 @@ func TestGetParamName(t *testing.T) {
 	}
 }
 
-func TestSetupTimeControl(t *testing.T) {
+func TestInitTimeControl(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	workDir := t.TempDir()
 
 	mgr := New(workDir, logger, "")
 
-	startTime := "2026-05-22 08:30:00"
-	controlFile, err := mgr.SetupTimeControl(startTime)
+	// Capture time before init
+	before := time.Now()
+	controlFile, err := mgr.initTimeControl()
+	after := time.Now()
+
 	if err != nil {
-		t.Fatalf("SetupTimeControl failed: %v", err)
+		t.Fatalf("initTimeControl failed: %v", err)
 	}
 
 	// Check control file was created
@@ -180,110 +183,101 @@ func TestSetupTimeControl(t *testing.T) {
 		t.Errorf("Control file was not created: %s", controlFile)
 	}
 
-	// Check control file has correct mtime
+	// Check control file mtime is approximately now (within test execution window)
 	info, err := os.Stat(controlFile)
 	if err != nil {
 		t.Fatalf("Failed to stat control file: %v", err)
 	}
 
-	expectedTime, _ := time.Parse("2006-01-02 15:04:05", startTime)
-	if !info.ModTime().Equal(expectedTime) {
-		t.Errorf("Control file mtime incorrect: expected %v, got %v", expectedTime, info.ModTime())
+	mtime := info.ModTime()
+	if mtime.Before(before) || mtime.After(after) {
+		t.Errorf("Control file mtime not in expected range: got %v, expected between %v and %v", mtime, before, after)
 	}
 
 	// Check manager state
 	if mgr.timeControlFile != controlFile {
 		t.Errorf("Manager timeControlFile not set correctly")
 	}
-	if !mgr.lastTimestamp.Equal(expectedTime) {
-		t.Errorf("Manager lastTimestamp not set correctly")
+	if mgr.testStartTime.Before(before) || mgr.testStartTime.After(after) {
+		t.Errorf("Manager testStartTime not set correctly")
 	}
 }
 
-func TestSetupTimeControlInvalidFormat(t *testing.T) {
+func TestAdvanceTimeBy(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	workDir := t.TempDir()
 
 	mgr := New(workDir, logger, "")
 
-	_, err := mgr.SetupTimeControl("invalid-time-format")
-	if err == nil {
-		t.Error("Expected error for invalid time format, got nil")
-	}
-}
-
-func TestAdvanceTime(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	workDir := t.TempDir()
-
-	mgr := New(workDir, logger, "")
-
-	// Setup initial time
-	startTime := "2026-05-22 08:30:00"
-	_, err := mgr.SetupTimeControl(startTime)
+	// Initialize time control
+	_, err := mgr.initTimeControl()
 	if err != nil {
-		t.Fatalf("SetupTimeControl failed: %v", err)
+		t.Fatalf("initTimeControl failed: %v", err)
 	}
 
-	// Advance time forward
-	newTime := "2026-05-22 08:30:30"
-	err = mgr.AdvanceTime(newTime)
+	// Advance time by 30 seconds from t0
+	offset := 30 * time.Second
+	err = mgr.AdvanceTimeBy(offset)
 	if err != nil {
-		t.Fatalf("AdvanceTime failed: %v", err)
+		t.Fatalf("AdvanceTimeBy failed: %v", err)
 	}
 
-	// Check control file has new mtime
+	// Check control file has mtime = t0 + offset
 	info, err := os.Stat(mgr.timeControlFile)
 	if err != nil {
 		t.Fatalf("Failed to stat control file: %v", err)
 	}
 
-	expectedTime, _ := time.Parse("2006-01-02 15:04:05", newTime)
+	expectedTime := mgr.testStartTime.Add(offset)
 	if !info.ModTime().Equal(expectedTime) {
 		t.Errorf("Control file mtime not updated: expected %v, got %v", expectedTime, info.ModTime())
 	}
-
-	// Check manager state
-	if !mgr.lastTimestamp.Equal(expectedTime) {
-		t.Errorf("Manager lastTimestamp not updated correctly")
-	}
 }
 
-func TestAdvanceTimeBackwardsRejected(t *testing.T) {
+func TestAdvanceTimeByMultipleTimes(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	workDir := t.TempDir()
 
 	mgr := New(workDir, logger, "")
 
-	// Setup initial time
-	startTime := "2026-05-22 08:30:00"
-	_, err := mgr.SetupTimeControl(startTime)
+	// Initialize time control
+	_, err := mgr.initTimeControl()
 	if err != nil {
-		t.Fatalf("SetupTimeControl failed: %v", err)
+		t.Fatalf("initTimeControl failed: %v", err)
 	}
 
-	// Try to move time backwards
-	pastTime := "2026-05-22 08:29:00"
-	err = mgr.AdvanceTime(pastTime)
-	if err == nil {
-		t.Error("Expected error when moving time backwards, got nil")
+	// Advance to t+5s
+	err = mgr.AdvanceTimeBy(5 * time.Second)
+	if err != nil {
+		t.Fatalf("AdvanceTimeBy(5s) failed: %v", err)
 	}
 
-	// Try to move to same time
-	err = mgr.AdvanceTime(startTime)
-	if err == nil {
-		t.Error("Expected error when moving time to same value, got nil")
+	// Advance to t+30s (absolute offset from t0, not relative to previous)
+	err = mgr.AdvanceTimeBy(30 * time.Second)
+	if err != nil {
+		t.Fatalf("AdvanceTimeBy(30s) failed: %v", err)
+	}
+
+	// Check final time is t0 + 30s
+	info, err := os.Stat(mgr.timeControlFile)
+	if err != nil {
+		t.Fatalf("Failed to stat control file: %v", err)
+	}
+
+	expectedTime := mgr.testStartTime.Add(30 * time.Second)
+	if !info.ModTime().Equal(expectedTime) {
+		t.Errorf("Control file mtime incorrect: expected %v, got %v", expectedTime, info.ModTime())
 	}
 }
 
-func TestAdvanceTimeNotInitialized(t *testing.T) {
+func TestAdvanceTimeByNotInitialized(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	workDir := t.TempDir()
 
 	mgr := New(workDir, logger, "")
 
 	// Try to advance time without initializing
-	err := mgr.AdvanceTime("2026-05-22 08:30:00")
+	err := mgr.AdvanceTimeBy(5 * time.Second)
 	if err == nil {
 		t.Error("Expected error when advancing time without initialization, got nil")
 	}
@@ -302,16 +296,28 @@ func TestGetCurrentFakeTime(t *testing.T) {
 	}
 
 	// After initialization
-	startTime := "2026-05-22 08:30:00"
-	_, err := mgr.SetupTimeControl(startTime)
+	before := time.Now()
+	_, err := mgr.initTimeControl()
+	after := time.Now()
 	if err != nil {
-		t.Fatalf("SetupTimeControl failed: %v", err)
+		t.Fatalf("initTimeControl failed: %v", err)
 	}
 
 	currentTime := mgr.GetCurrentFakeTime()
-	expectedTime, _ := time.Parse("2006-01-02 15:04:05", startTime)
+	if currentTime.Before(before) || currentTime.After(after) {
+		t.Errorf("GetCurrentFakeTime incorrect: expected between %v and %v, got %v", before, after, currentTime)
+	}
+
+	// After advancing time
+	err = mgr.AdvanceTimeBy(10 * time.Second)
+	if err != nil {
+		t.Fatalf("AdvanceTimeBy failed: %v", err)
+	}
+
+	currentTime = mgr.GetCurrentFakeTime()
+	expectedTime := mgr.testStartTime.Add(10 * time.Second)
 	if !currentTime.Equal(expectedTime) {
-		t.Errorf("GetCurrentFakeTime incorrect: expected %v, got %v", expectedTime, currentTime)
+		t.Errorf("GetCurrentFakeTime after advance incorrect: expected %v, got %v", expectedTime, currentTime)
 	}
 }
 
