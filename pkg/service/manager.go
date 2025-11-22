@@ -98,7 +98,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	// Start varnish in a goroutine
 	m.logger.Debug("Starting varnish daemon", "cmd", m.config.VarnishCmd)
 	go func() {
-		if err := m.varnishManager.Start(ctx, m.config.VarnishCmd, args); err != nil {
+		if err := m.varnishManager.Start(ctx, m.config.VarnishCmd, args, &m.config.VarnishConfig.Varnish.Time); err != nil {
 			errCh <- fmt.Errorf("varnish daemon failed: %w", err)
 		}
 	}()
@@ -129,4 +129,11 @@ func (m *Manager) GetVarnishManager() *varnish.Manager {
 // GetCacheStarter returns the cache starter (for accessing VCL mapping)
 func (m *Manager) GetCacheStarter() *cache.Starter {
 	return m.cacheStarter
+}
+
+// AdvanceTime advances the fake time (if faketime is enabled)
+// timeStr format: "2006-01-02 15:04:05" (e.g., "2026-05-22 08:30:30")
+// Returns error if time control is not enabled or if time would go backwards
+func (m *Manager) AdvanceTime(timeStr string) error {
+	return m.varnishManager.AdvanceTime(timeStr)
 }

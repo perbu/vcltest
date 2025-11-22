@@ -23,6 +23,15 @@ type VarnishConfig struct {
 	HTTP      []HTTPConfig
 	HTTPS     []HTTPSConfig
 	ExtraArgs []string
+	Time      TimeConfig
+}
+
+// TimeConfig controls optional time manipulation using libfaketime
+type TimeConfig struct {
+	Enabled     bool   // Enable faketime (default: false for normal operation)
+	StartTime   string // Initial time in format "2006-01-02 15:04:05"
+	LibPath     string // Optional: override libfaketime library path (auto-detected if empty)
+	ControlFile string // Path to control file (auto-created in workdir if empty)
 }
 
 // HTTPConfig defines an HTTP listening address
