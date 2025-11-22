@@ -16,10 +16,17 @@ type Result struct {
 }
 
 // Check verifies all expectations against actual results
-func Check(expect testspec.ExpectSpec, response *client.Response, backendCalls int) *Result {
+// backendsUsed is optional - only needed if backend_used assertion is specified
+func Check(expect testspec.ExpectSpec, response *client.Response, backendCalls int, backendsUsed ...[]string) *Result {
 	result := &Result{
 		Passed: true,
 		Errors: []string{},
+	}
+
+	// Extract backends used list (optional)
+	var backends []string
+	if len(backendsUsed) > 0 {
+		backends = backendsUsed[0]
 	}
 
 	// Check status code
@@ -35,6 +42,28 @@ func Check(expect testspec.ExpectSpec, response *client.Response, backendCalls i
 			result.Passed = false
 			result.Errors = append(result.Errors,
 				fmt.Sprintf("Backend calls: expected %d, got %d", *expect.BackendCalls, backendCalls))
+		}
+	}
+
+	// Check backend used (if specified)
+	if expect.BackendUsed != "" {
+		found := false
+		for _, backend := range backends {
+			if backend == expect.BackendUsed {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if len(backends) == 0 {
+				result.Passed = false
+				result.Errors = append(result.Errors,
+					fmt.Sprintf("Backend used: expected %q, but no backend was called", expect.BackendUsed))
+			} else {
+				result.Passed = false
+				result.Errors = append(result.Errors,
+					fmt.Sprintf("Backend used: expected %q, got %v", expect.BackendUsed, backends))
+			}
 		}
 	}
 

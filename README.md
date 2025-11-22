@@ -19,8 +19,10 @@ vcltest examples/access-control.yaml
 - **VCL execution tracing** - See exactly which lines of VCL executed (via Varnish's `feature=+trace`)
 - **Colored error output** - Failed tests show VCL source with green ✓ marks on executed lines
 - **Mock backend** - Controlled backend responses for deterministic testing
-- **Multiple assertions** - Status codes, backend calls, headers, body content
+- **Multiple assertions** - Status codes, backend calls, headers, body content, cache hits
 - **Multi-test files** - Run multiple test cases from a single YAML file
+- **Temporal testing** - Time manipulation for cache TTL and time-dependent VCL testing
+- **Scenario-based tests** - Multi-step tests with time advancement between steps
 
 ## Quick Start
 
@@ -28,6 +30,7 @@ vcltest examples/access-control.yaml
 
 - Go 1.21 or later
 - Varnish 7.x or later (with `varnishd` and `varnishlog` in PATH)
+- libfaketime (optional, for temporal/cache testing): `brew install libfaketime` or `apt install faketime`
 
 ### Installation
 
@@ -90,7 +93,7 @@ Run the test:
 
 ## Test Format
 
-### Basic Structure
+### Basic Single-Request Test
 
 ```yaml
 name: Test description
@@ -115,7 +118,59 @@ expect:
   headers:                       # Optional - expected response headers
     Header-Name: expected-value
   body_contains: "text"          # Optional - substring match
+  cached: true                   # Optional - check if cached (Phase 2)
+  age_lt: 35                     # Optional - Age header < N seconds (Phase 2)
+  age_gt: 5                      # Optional - Age header > N seconds (Phase 2)
+  stale: false                   # Optional - check if stale (Phase 2)
 ```
+
+### Scenario-Based Temporal Test
+
+For cache TTL testing and time-dependent VCL logic:
+
+```yaml
+name: Cache TTL test
+vcl: cache.vcl
+
+scenario:
+  # Step 1: Initial request at t=0s
+  - at: "0s"
+    request:
+      url: /article
+    backend:
+      status: 200
+      headers:
+        Cache-Control: "max-age=60"
+      body: "Article content"
+    expect:
+      status: 200
+      cached: false
+      backend_calls: 1
+
+  # Step 2: Request at t=30s - should hit cache
+  - at: "30s"
+    request:
+      url: /article
+    expect:
+      status: 200
+      cached: true
+      age_lt: 35
+      backend_calls: 1
+
+  # Step 3: Request at t=70s - cache expired
+  - at: "70s"
+    request:
+      url: /article
+    expect:
+      status: 200
+      cached: false
+      backend_calls: 2
+```
+
+**Key points:**
+- Time offsets (`at: "30s"`) are absolute from test start, not incremental
+- Requires libfaketime installed
+- Faketime automatically enabled when scenario tests detected
 
 ### Multiple Tests
 
@@ -199,6 +254,7 @@ See `examples/` directory:
 - `examples/basic.vcl` + `examples/basic.yaml` - Simple request routing
 - `examples/access-control.vcl` + `examples/access-control.yaml` - Header-based access control
 - `examples/error-demo.vcl` + `examples/error-demo.yaml` - Demonstrates error output
+- `examples/cache-ttl.vcl` + `examples/cache-ttl.yaml` - Cache TTL testing with time manipulation
 
 ## Architecture
 

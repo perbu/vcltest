@@ -1,0 +1,47 @@
+name: API routing test
+vcl: examples/routing.vcl
+
+backends:
+  api_backend:
+    status: 200
+    headers:
+      X-Backend: "api"
+      Content-Type: "application/json"
+    body: '{"service": "api"}'
+
+  web_backend:
+    status: 200
+    headers:
+      X-Backend: "web"
+      Content-Type: "text/html"
+    body: "<html>Web content</html>"
+
+scenario:
+  # Test API request goes to api_backend
+  - at: "0s"
+    request:
+      url: /api/users
+    expect:
+      status: 200
+      backend_used: "api_backend"
+      headers:
+        X-Backend: "api"
+
+  # Test web request goes to web_backend
+  - at: "1s"
+    request:
+      url: /index.html
+    expect:
+      status: 200
+      backend_used: "web_backend"
+      headers:
+        X-Backend: "web"
+
+  # Test another API path
+  - at: "2s"
+    request:
+      url: /api/products/123
+    expect:
+      status: 200
+      backend_used: "api_backend"
+      body_contains: "api"

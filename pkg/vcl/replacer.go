@@ -3,22 +3,44 @@ package vcl
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 )
 
+// BackendAddress represents a backend's host and port
+type BackendAddress struct {
+	Host string
+	Port string
+}
+
 // ReplaceBackend replaces backend definitions in VCL with a mock backend address
-// This is a simple text-based replacement for testing purposes
+// This is a simple text-based replacement for testing purposes (legacy single-backend)
 func ReplaceBackend(vclContent, mockHost, mockPort string) (string, error) {
-	// Replace .host = "..." with .host = mockHost
-	hostRegex := regexp.MustCompile(`(\.host\s*=\s*)"[^"]+"`)
-	vclContent = hostRegex.ReplaceAllString(vclContent, fmt.Sprintf(`$1"%s"`, mockHost))
+	backends := map[string]BackendAddress{
+		"default": {Host: mockHost, Port: mockPort},
+	}
+	return ReplaceBackends(vclContent, backends)
+}
 
-	// Replace .port = "..." with .port = mockPort
-	portRegex := regexp.MustCompile(`(\.port\s*=\s*)"[^"]+"`)
-	vclContent = portRegex.ReplaceAllString(vclContent, fmt.Sprintf(`$1"%s"`, mockPort))
+// ReplaceBackends replaces multiple named backend placeholders in VCL
+// Placeholders follow the pattern: __BACKEND_HOST_BACKENDNAME__ and __BACKEND_PORT_BACKENDNAME__
+// where BACKENDNAME is the backend name in uppercase
+func ReplaceBackends(vclContent string, backends map[string]BackendAddress) (string, error) {
+	result := vclContent
 
-	return vclContent, nil
+	for name, addr := range backends {
+		// Convert backend name to uppercase for placeholder matching
+		nameUpper := strings.ToUpper(name)
+
+		// Replace host placeholder
+		hostPlaceholder := fmt.Sprintf("__BACKEND_HOST_%s__", nameUpper)
+		result = strings.ReplaceAll(result, hostPlaceholder, addr.Host)
+
+		// Replace port placeholder
+		portPlaceholder := fmt.Sprintf("__BACKEND_PORT_%s__", nameUpper)
+		result = strings.ReplaceAll(result, portPlaceholder, addr.Port)
+	}
+
+	return result, nil
 }
 
 // LoadAndReplace loads a VCL file, replaces backend address, and returns the modified content

@@ -53,8 +53,8 @@ func (r *Recorder) Start() error {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
 
-	// Start varnishlog directly (no shell wrapper)
-	r.cmd = exec.Command("varnishlog", "-n", r.workDir)
+	// Start varnishlog with request grouping to capture backend connections
+	r.cmd = exec.Command("varnishlog", "-n", r.workDir, "-g", "request")
 	r.cmd.Stdout = outFile
 	r.cmd.Stderr = outFile
 
@@ -178,7 +178,7 @@ func (r *Recorder) GetVCLMessagesSince(offset int64) ([]Message, error) {
 	vclMessages := make([]Message, 0)
 	for _, msg := range messages {
 		switch msg.Type {
-		case MessageTypeVCLTrace, MessageTypeVCLCall, MessageTypeVCLReturn:
+		case MessageTypeVCLTrace, MessageTypeVCLCall, MessageTypeVCLReturn, MessageTypeBackendOpen:
 			vclMessages = append(vclMessages, msg)
 		}
 	}

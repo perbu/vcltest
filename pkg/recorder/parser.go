@@ -115,10 +115,30 @@ func CountBackendCalls(messages []Message) int {
 	return count
 }
 
+// GetBackendsUsed extracts unique backend names from BackendOpen messages
+func GetBackendsUsed(messages []Message) []string {
+	backendSet := make(map[string]bool)
+
+	for _, msg := range messages {
+		if backend, ok := ParseBackendCall(msg); ok {
+			backendSet[backend.BackendName] = true
+		}
+	}
+
+	// Convert to slice
+	backends := make([]string, 0, len(backendSet))
+	for name := range backendSet {
+		backends = append(backends, name)
+	}
+
+	return backends
+}
+
 // GetVCLTraceSummary returns a summary of VCL execution
 type VCLTraceSummary struct {
 	ExecutedLines []int
 	BackendCalls  int
+	BackendsUsed  []string // Names of backends that were called
 	VCLCalls      []string
 	VCLReturns    []string
 }
@@ -128,6 +148,7 @@ func GetTraceSummary(messages []Message) VCLTraceSummary {
 	summary := VCLTraceSummary{
 		ExecutedLines: GetExecutedLines(messages),
 		BackendCalls:  CountBackendCalls(messages),
+		BackendsUsed:  GetBackendsUsed(messages),
 		VCLCalls:      make([]string, 0),
 		VCLReturns:    make([]string, 0),
 	}

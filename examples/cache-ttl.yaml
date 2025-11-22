@@ -1,0 +1,37 @@
+name: Cache TTL test - 60 second max-age
+vcl: examples/cache-ttl.vcl
+
+scenario:
+  # Step 1: Initial request at t=0s - cache miss
+  - at: "0s"
+    request:
+      url: /article
+    backend:
+      status: 200
+      headers:
+        Cache-Control: "max-age=60"
+        Content-Type: "text/html"
+      body: "Article content"
+    expect:
+      status: 200
+      cached: false
+      backend_calls: 1
+
+  # Step 2: Request at t=30s - cache hit, fresh
+  - at: "30s"
+    request:
+      url: /article
+    expect:
+      status: 200
+      cached: true
+      age_lt: 35
+      backend_calls: 1
+
+  # Step 3: Request at t=70s - cache expired, new backend fetch
+  - at: "70s"
+    request:
+      url: /article
+    expect:
+      status: 200
+      cached: false
+      backend_calls: 2

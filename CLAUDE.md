@@ -5,12 +5,13 @@ see [README.md](README.md).
 
 ## pkg/varnish
 
-Manages the varnishd process lifecycle.
+Manages the varnishd process lifecycle and time control for temporal testing.
 
 **Key types:**
 
-- `Manager` - Controls varnishd startup, workspace preparation, and process monitoring
+- `Manager` - Controls varnishd startup, workspace preparation, process monitoring, and time manipulation
 - `Config` - Configuration for varnish command-line arguments (ports, storage, parameters)
+- `TimeConfig` - Configuration for libfaketime integration (enabled, lib path)
 
 **Main operations:**
 
@@ -18,6 +19,8 @@ Manages the varnishd process lifecycle.
 - `PrepareWorkspace()` - Sets up directories, secret file, and license file
 - `Start()` - Starts varnishd process with given arguments and blocks until exit
 - `BuildArgs()` - Constructs varnishd command-line from Config struct
+- `AdvanceTimeBy(offset)` - Advances fake time to testStartTime + offset (absolute, not relative)
+- `GetCurrentFakeTime()` - Returns current fake time from control file mtime
 
 **Responsibilities:**
 
@@ -26,6 +29,8 @@ Manages the varnishd process lifecycle.
 - License file handling for Varnish Enterprise
 - Command-line argument construction (including `-p feature=+trace`)
 - Process output routing to structured logs
+- libfaketime integration for time manipulation (Phase 2)
+- Control file creation and mtime manipulation for time advancement
 
 ## pkg/varnishadm
 
@@ -67,18 +72,18 @@ Implements the varnishadm server protocol and command interface.
 
 ## pkg/service
 
-Orchestrates startup and lifecycle of varnishadm server and varnish daemon.
+Orchestrates startup and lifecycle of varnishadm server and varnish daemon. Implements TimeController interface for temporal testing.
 
 **Key types:**
 
-- `Manager` - Coordinates both services with proper initialization order
+- `Manager` - Coordinates both services with proper initialization order, implements TimeController
 - `Config` - Combined configuration for both varnishadm and varnish
 
 **Startup sequence:**
 
 1. Start varnishadm server (runs in background)
 2. Prepare varnish workspace
-3. Build varnish arguments
+3. Build varnish arguments (includes faketime setup if enabled)
 4. Start varnish daemon (connects to varnishadm, child auto-starts)
 5. Monitor both services until failure or context cancellation
 
@@ -88,6 +93,7 @@ Orchestrates startup and lifecycle of varnishadm server and varnish daemon.
 - `Start()` - Starts both services and blocks until error or shutdown
 - `GetVarnishadm()` - Returns interface for issuing varnishadm commands
 - `GetVarnishManager()` - Returns varnish manager instance
+- `AdvanceTimeBy(offset)` - Delegates to varnish Manager for time control (TimeController interface)
 
 **Responsibilities:**
 
@@ -95,6 +101,7 @@ Orchestrates startup and lifecycle of varnishadm server and varnish daemon.
 - Handle errors from either service
 - Graceful shutdown via context cancellation
 - Provide unified interface for service management
+- Provide TimeController interface for scenario-based tests (Phase 2)
 
 ## pkg/recorder
 
@@ -163,59 +170,78 @@ Formats VCL source code with execution trace visualization for terminal output.
 
 ## pkg/testspec
 
-Parses YAML test specification files.
+Parses YAML test specification files. Supports both single-request and scenario-based temporal tests.
 
 **Key types:**
 
-- `TestSpec` - Complete test specification (name, VCL, request, backend, expect)
+- `TestSpec` - Complete test specification (name, VCL, request/backend/expect OR scenario)
+- `ScenarioStep` - Single step in temporal test scenario (at, request, backend, expect)
 - `RequestSpec` - HTTP request definition (method, URL, headers, body)
 - `BackendSpec` - Mock backend response (status, headers, body)
-- `ExpectSpec` - Test assertions (status, backend_calls, headers, body_contains)
+- `ExpectSpec` - Test assertions (status, backend_calls, headers, body_contains, cached, age_lt, age_gt, stale)
 
 **Main operations:**
 
 - `Load()` - Loads and parses YAML file(s), returns slice of TestSpec
-- `ApplyDefaults()` - Sets default values for optional fields
+- `ApplyDefaults()` - Sets default values for optional fields (handles both test types)
+- `IsScenario()` - Returns true if test is scenario-based
 
 **Responsibilities:**
 
 - Parse YAML test files (supports multi-document YAML with `---`)
-- Validate test specification structure
+- Validate test specification structure (single-request OR scenario)
 - Apply sensible defaults (GET method, 200 status, etc.)
+- Support cache-specific assertions (cached, age_lt, age_gt, stale) - Phase 2
+- Support scenario-based temporal tests with time offsets - Phase 2
 - Return structured test definitions for runner
 
 ## pkg/runner
 
-Orchestrates test execution and coordinates all components.
+Orchestrates test execution and coordinates all components. Supports both single-request and scenario-based tests.
 
 **Key types:**
 
-- `Runner` - Test executor (has varnishadm, varnishURL, workDir, logger)
+- `Runner` - Test executor (has varnishadm, varnishURL, workDir, logger, timeController)
 - `TestResult` - Result of a single test (passed, errors, VCL trace, source)
 - `VCLTraceInfo` - Execution trace data (executed lines, backend calls, VCL flow)
+- `TimeController` - Interface for time manipulation (implemented by service.Manager)
 
 **Main operations:**
 
 - `New()` - Creates runner with varnishadm interface, varnish URL, workDir, logger
-- `RunTest()` - Executes a single test case end-to-end
+- `SetTimeController()` - Sets time controller for scenario-based tests
+- `RunTest()` - Executes a single test case end-to-end (dispatches to appropriate method)
+- `runSingleRequestTest()` - Executes traditional single-request test
+- `runScenarioTest()` - Executes scenario-based temporal test (Phase 2)
 
-**Test execution flow:**
+**Test execution flow (single-request):**
 
 1. Start mock backend server
 2. Replace VCL backend placeholders (`__BACKEND_HOST__`, `__BACKEND_PORT__`)
 3. Load VCL into Varnish via varnishadm
 4. Activate VCL
-5. Start varnishlog recorder
-6. Make HTTP request through Varnish
-7. Stop recorder and parse trace
-8. Check assertions
-9. Clean up VCL
-10. Return TestResult with trace data (on failure)
+5. Make HTTP request through Varnish
+6. Check assertions
+7. Clean up VCL
+8. Return TestResult with trace data (on failure)
+
+**Test execution flow (scenario):**
+
+1. Start mock backend server (reused across steps)
+2. Load and activate VCL once
+3. For each scenario step:
+   - Advance time to step's offset (absolute from t0)
+   - Make HTTP request
+   - Check assertions
+4. Collect errors from all steps
+5. Clean up VCL
+6. Return TestResult with trace data (on failure)
 
 **Responsibilities:**
 
 - Coordinate all test components
 - Manage test lifecycle
+- Execute scenario-based temporal tests with time advancement (Phase 2)
 - Collect VCL execution traces on test failure
 - Provide detailed error information with trace context
 
@@ -263,7 +289,7 @@ HTTP client for making test requests to Varnish.
 
 ## pkg/assertion
 
-Validates test expectations against actual results.
+Validates test expectations against actual results. Supports cache-specific assertions (Phase 2).
 
 **Key types:**
 
@@ -279,12 +305,22 @@ Validates test expectations against actual results.
 - Backend calls (optional) - Count match
 - Headers (optional) - Key-value exact match
 - Body contains (optional) - Substring match
+- Cached (optional) - Cache hit/miss detection via X-Varnish header (Phase 2)
+- Age less than (optional) - Age header < N seconds (Phase 2)
+- Age greater than (optional) - Age header > N seconds (Phase 2)
+- Stale (optional) - Stale content detection via X-Varnish-Stale or Warning: 110 (Phase 2)
+
+**Helper functions:**
+
+- `checkIfCached()` - Detects cache hits using X-Varnish header format and Age header
+- `checkIfStale()` - Detects stale content via custom headers or HTTP warnings
 
 **Responsibilities:**
 
 - Compare expected vs actual results
 - Generate clear error messages for failures
 - Return structured result with all failures
+- Cache-aware assertions for temporal testing (Phase 2)
 - Simple, straightforward validation logic
 
 ## pkg/vcl

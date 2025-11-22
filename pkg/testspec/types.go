@@ -2,12 +2,13 @@ package testspec
 
 // TestSpec represents a single test case
 type TestSpec struct {
-	Name     string         `yaml:"name"`
-	VCL      string         `yaml:"vcl"`
-	Request  RequestSpec    `yaml:"request,omitempty"`  // Optional: for single-request tests
-	Backend  BackendSpec    `yaml:"backend,omitempty"`  // Optional: for single-request tests
-	Expect   ExpectSpec     `yaml:"expect,omitempty"`   // Optional: for single-request tests
-	Scenario []ScenarioStep `yaml:"scenario,omitempty"` // Optional: for multi-step temporal tests
+	Name     string                 `yaml:"name"`
+	VCL      string                 `yaml:"vcl"`
+	Request  RequestSpec            `yaml:"request,omitempty"`  // Optional: for single-request tests
+	Backend  BackendSpec            `yaml:"backend,omitempty"`  // Optional: for single-request tests (legacy)
+	Backends map[string]BackendSpec `yaml:"backends,omitempty"` // Optional: for multi-backend tests
+	Expect   ExpectSpec             `yaml:"expect,omitempty"`   // Optional: for single-request tests
+	Scenario []ScenarioStep         `yaml:"scenario,omitempty"` // Optional: for multi-step temporal tests
 }
 
 // ScenarioStep represents a single step in a temporal test scenario
@@ -37,6 +38,7 @@ type BackendSpec struct {
 type ExpectSpec struct {
 	Status       int               `yaml:"status"`
 	BackendCalls *int              `yaml:"backend_calls,omitempty"`
+	BackendUsed  string            `yaml:"backend_used,omitempty"` // Check which backend was used
 	Headers      map[string]string `yaml:"headers,omitempty"`
 	BodyContains string            `yaml:"body_contains,omitempty"`
 	Cached       *bool             `yaml:"cached,omitempty"` // Check if response was cached

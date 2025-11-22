@@ -87,6 +87,113 @@ func parseDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
+// backendManager manages multiple mock backends for a test
+type backendManager struct {
+	backends map[string]*backend.MockBackend
+	logger   *slog.Logger
+}
+
+// startBackends initializes and starts all mock backends
+// Returns a map of backend names to their addresses
+func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[string]vcl.BackendAddress, error) {
+	bm := &backendManager{
+		backends: make(map[string]*backend.MockBackend),
+		logger:   r.logger,
+	}
+	addresses := make(map[string]vcl.BackendAddress)
+
+	// Handle multi-backend tests
+	if len(test.Backends) > 0 {
+		for name, spec := range test.Backends {
+			cfg := backend.Config{
+				Status:  spec.Status,
+				Headers: spec.Headers,
+				Body:    spec.Body,
+			}
+			// Apply default status if not set
+			if cfg.Status == 0 {
+				cfg.Status = 200
+			}
+			mock := backend.New(cfg)
+			addr, err := mock.Start()
+			if err != nil {
+				bm.stopAll()
+				return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
+			}
+
+			host, port, err := vcl.ParseAddress(addr)
+			if err != nil {
+				bm.stopAll()
+				return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
+			}
+
+			bm.backends[name] = mock
+			addresses[name] = vcl.BackendAddress{Host: host, Port: port}
+			r.logger.Debug("Started backend", "name", name, "address", addr)
+		}
+	} else {
+		// Legacy single-backend mode - get backend config from test.Backend or first scenario step
+		var backendSpec testspec.BackendSpec
+		if test.Backend.Status != 0 || len(test.Backend.Headers) > 0 || test.Backend.Body != "" {
+			// Use test-level backend config
+			backendSpec = test.Backend
+		} else if len(test.Scenario) > 0 {
+			// Use backend config from first scenario step that has one
+			for _, step := range test.Scenario {
+				if step.Backend.Status != 0 || len(step.Backend.Headers) > 0 || step.Backend.Body != "" {
+					backendSpec = step.Backend
+					break
+				}
+			}
+		}
+
+		cfg := backend.Config{
+			Status:  backendSpec.Status,
+			Headers: backendSpec.Headers,
+			Body:    backendSpec.Body,
+		}
+		// Apply default status if not set
+		if cfg.Status == 0 {
+			cfg.Status = 200
+		}
+
+		mock := backend.New(cfg)
+		addr, err := mock.Start()
+		if err != nil {
+			return nil, nil, fmt.Errorf("starting mock backend: %w", err)
+		}
+
+		host, port, err := vcl.ParseAddress(addr)
+		if err != nil {
+			bm.stopAll()
+			return nil, nil, fmt.Errorf("parsing backend address: %w", err)
+		}
+
+		bm.backends["default"] = mock
+		addresses["default"] = vcl.BackendAddress{Host: host, Port: port}
+	}
+
+	return bm, addresses, nil
+}
+
+// stopAll stops all managed backends
+func (bm *backendManager) stopAll() {
+	for name, backend := range bm.backends {
+		if err := backend.Stop(); err != nil {
+			bm.logger.Warn("Failed to stop backend", "name", name, "error", err)
+		}
+	}
+}
+
+// getTotalCallCount returns the sum of all backend call counts
+func (bm *backendManager) getTotalCallCount() int {
+	total := 0
+	for _, backend := range bm.backends {
+		total += backend.GetCallCount()
+	}
+	return total
+}
+
 // RunTest executes a single test case
 func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
 	// Check if this is a scenario-based test
@@ -98,29 +205,23 @@ func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
 
 // runSingleRequestTest executes a traditional single-request test
 func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, error) {
-	// Start mock backend
-	backendCfg := backend.Config{
-		Status:  test.Backend.Status,
-		Headers: test.Backend.Headers,
-		Body:    test.Backend.Body,
-	}
-	mockBackend := backend.New(backendCfg)
-	backendAddr, err := mockBackend.Start()
+	// Start mock backends
+	bm, addresses, err := r.startBackends(test)
 	if err != nil {
-		return nil, fmt.Errorf("starting mock backend: %w", err)
+		return nil, err
 	}
-	defer mockBackend.Stop()
+	defer bm.stopAll()
 
-	// Parse backend address
-	host, port, err := vcl.ParseAddress(backendAddr)
+	// Load VCL file
+	vclData, err := os.ReadFile(test.VCL)
 	if err != nil {
-		return nil, fmt.Errorf("parsing backend address: %w", err)
+		return nil, fmt.Errorf("reading VCL file: %w", err)
 	}
 
-	// Load and modify VCL
-	modifiedVCL, err := vcl.LoadAndReplace(test.VCL, host, port)
+	// Replace backend placeholders
+	modifiedVCL, err := vcl.ReplaceBackends(string(vclData), addresses)
 	if err != nil {
-		return nil, fmt.Errorf("loading VCL: %w", err)
+		return nil, fmt.Errorf("replacing backends in VCL: %w", err)
 	}
 
 	// Write modified VCL to temporary file
@@ -174,8 +275,19 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec) (*TestResult, erro
 	// Give varnishlog time to process and flush writes
 	time.Sleep(500 * time.Millisecond)
 
+	// Get backends used from varnishlog (for backend_used assertion)
+	var backendsUsed []string
+	if r.recorder != nil && test.Expect.BackendUsed != "" {
+		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
+		if err != nil {
+			r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
+		} else {
+			backendsUsed = recorder.GetBackendsUsed(messages)
+		}
+	}
+
 	// Check assertions
-	assertResult := assertion.Check(test.Expect, response, mockBackend.GetCallCount())
+	assertResult := assertion.Check(test.Expect, response, bm.getTotalCallCount(), backendsUsed)
 
 	// Prepare test result
 	result := &TestResult{
@@ -222,41 +334,23 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
 		return nil, fmt.Errorf("scenario-based tests require time controller to be set")
 	}
 
-	// Start mock backend (will be used for all steps)
-	// Use backend config from first step that has one
-	var initialBackend testspec.BackendSpec
-	for _, step := range test.Scenario {
-		if step.Backend.Status != 0 || len(step.Backend.Headers) > 0 || step.Backend.Body != "" {
-			initialBackend = step.Backend
-			break
-		}
+	// Start mock backends
+	bm, addresses, err := r.startBackends(test)
+	if err != nil {
+		return nil, err
 	}
-	if initialBackend.Status == 0 {
-		initialBackend.Status = 200
+	defer bm.stopAll()
+
+	// Load VCL file
+	vclData, err := os.ReadFile(test.VCL)
+	if err != nil {
+		return nil, fmt.Errorf("reading VCL file: %w", err)
 	}
 
-	backendCfg := backend.Config{
-		Status:  initialBackend.Status,
-		Headers: initialBackend.Headers,
-		Body:    initialBackend.Body,
-	}
-	mockBackend := backend.New(backendCfg)
-	backendAddr, err := mockBackend.Start()
+	// Replace backend placeholders
+	modifiedVCL, err := vcl.ReplaceBackends(string(vclData), addresses)
 	if err != nil {
-		return nil, fmt.Errorf("starting mock backend: %w", err)
-	}
-	defer mockBackend.Stop()
-
-	// Parse backend address
-	host, port, err := vcl.ParseAddress(backendAddr)
-	if err != nil {
-		return nil, fmt.Errorf("parsing backend address: %w", err)
-	}
-
-	// Load and modify VCL
-	modifiedVCL, err := vcl.LoadAndReplace(test.VCL, host, port)
-	if err != nil {
-		return nil, fmt.Errorf("loading VCL: %w", err)
+		return nil, fmt.Errorf("replacing backends in VCL: %w", err)
 	}
 
 	// Write modified VCL to temporary file
@@ -309,6 +403,15 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
 
 		r.logger.Debug("Executing scenario step", "step", stepIdx+1, "at", step.At)
 
+		// Mark current log position before making request
+		var stepLogOffset int64
+		if r.recorder != nil {
+			stepLogOffset, err = r.recorder.MarkPosition()
+			if err != nil {
+				r.logger.Warn("Failed to mark log position", "error", err)
+			}
+		}
+
 		// Make HTTP request to Varnish
 		response, err := client.MakeRequest(r.varnishURL, step.Request)
 		if err != nil {
@@ -318,8 +421,19 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec) (*TestResult, error) {
 		// Give varnishlog time to process and flush writes
 		time.Sleep(500 * time.Millisecond)
 
+		// Get backends used from varnishlog (for backend_used assertion)
+		var backendsUsed []string
+		if r.recorder != nil && step.Expect.BackendUsed != "" {
+			messages, err := r.recorder.GetVCLMessagesSince(stepLogOffset)
+			if err != nil {
+				r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
+			} else {
+				backendsUsed = recorder.GetBackendsUsed(messages)
+			}
+		}
+
 		// Check assertions for this step
-		assertResult := assertion.Check(step.Expect, response, mockBackend.GetCallCount())
+		assertResult := assertion.Check(step.Expect, response, bm.getTotalCallCount(), backendsUsed)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {
