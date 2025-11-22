@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -47,28 +48,13 @@ func (r *Recorder) Start() error {
 	}
 
 	// Start varnishlog in background
-	// -n: varnish working directory
-	// -g request: group by request
-	// Write to stdout instead of binary file (no -w flag)
-	// Binary format has buffering issues with single requests
-	r.cmd = exec.Command("varnishlog",
-		"-n", r.workDir,
-		"-g", "request",
-	)
+	// Use shell to handle output redirection to ensure proper buffering
+	cmdStr := fmt.Sprintf("varnishlog -n %s > %s 2>&1", r.workDir, r.outputFile)
+	r.cmd = exec.Command("/bin/sh", "-c", cmdStr)
 
-	// Capture stdout to file
-	var err error
-	r.outfile, err = os.Create(r.outputFile)
-	if err != nil {
-		return fmt.Errorf("creating output file: %w", err)
-	}
-	r.cmd.Stdout = r.outfile
-	r.cmd.Stderr = os.Stderr
-
-	r.logger.Info("Starting varnishlog recorder", "output_file", r.outputFile)
+	r.logger.Info("Starting varnishlog recorder", "output_file", r.outputFile, "cmd", cmdStr)
 
 	if err := r.cmd.Start(); err != nil {
-		r.outfile.Close()
 		return fmt.Errorf("failed to start varnishlog: %w", err)
 	}
 
@@ -107,17 +93,15 @@ func (r *Recorder) Stop() error {
 	case <-time.After(5 * time.Second):
 		r.logger.Warn("varnishlog did not exit in time, killing process")
 		if err := r.cmd.Process.Kill(); err != nil {
-			r.outfile.Close()
 			return fmt.Errorf("failed to kill varnishlog: %w", err)
 		}
 	}
 
-	// Close output file
-	if r.outfile != nil {
-		r.outfile.Close()
-	}
-
 	r.running = false
+
+	// Give file system a moment to flush writes
+	time.Sleep(100 * time.Millisecond)
+
 	return nil
 }
 
@@ -126,19 +110,35 @@ func (r *Recorder) IsRunning() bool {
 	return r.running
 }
 
-// GetMessages reads the recorded log file and returns all parsed messages
-func (r *Recorder) GetMessages() ([]Message, error) {
-	if r.running {
-		return nil, fmt.Errorf("cannot read messages while recording is active, call Stop() first")
+// MarkPosition records the current log file position for later reading
+func (r *Recorder) MarkPosition() (int64, error) {
+	stat, err := os.Stat(r.outputFile)
+	if err != nil {
+		return 0, fmt.Errorf("failed to stat log file: %w", err)
 	}
+	return stat.Size(), nil
+}
 
+// GetMessagesSince reads log entries from a specific file offset
+func (r *Recorder) GetMessagesSince(offset int64) ([]Message, error) {
 	// Check if log file exists
 	if _, err := os.Stat(r.outputFile); os.IsNotExist(err) {
 		return nil, fmt.Errorf("log file does not exist: %s", r.outputFile)
 	}
 
-	// Read the text log file directly (no longer binary)
-	data, err := os.ReadFile(r.outputFile)
+	// Open file and seek to offset
+	file, err := os.Open(r.outputFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := file.Seek(offset, 0); err != nil {
+		return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
+	}
+
+	// Read from offset to end
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read log file: %w", err)
 	}
@@ -146,9 +146,14 @@ func (r *Recorder) GetMessages() ([]Message, error) {
 	return r.parseMessages(string(data)), nil
 }
 
-// GetVCLMessages returns only VCL-related messages (VCL_trace, VCL_call, VCL_return)
-func (r *Recorder) GetVCLMessages() ([]Message, error) {
-	messages, err := r.GetMessages()
+// GetMessages reads the entire recorded log file and returns all parsed messages
+func (r *Recorder) GetMessages() ([]Message, error) {
+	return r.GetMessagesSince(0)
+}
+
+// GetVCLMessagesSince returns only VCL-related messages from a specific offset
+func (r *Recorder) GetVCLMessagesSince(offset int64) ([]Message, error) {
+	messages, err := r.GetMessagesSince(offset)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +167,11 @@ func (r *Recorder) GetVCLMessages() ([]Message, error) {
 	}
 
 	return vclMessages, nil
+}
+
+// GetVCLMessages returns only VCL-related messages (VCL_trace, VCL_call, VCL_return)
+func (r *Recorder) GetVCLMessages() ([]Message, error) {
+	return r.GetVCLMessagesSince(0)
 }
 
 // parseMessages parses raw varnishlog output into structured messages

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/perbu/vcltest/pkg/formatter"
+	"github.com/perbu/vcltest/pkg/recorder"
 	"github.com/perbu/vcltest/pkg/runner"
 	"github.com/perbu/vcltest/pkg/service"
 	"github.com/perbu/vcltest/pkg/testspec"
@@ -101,8 +102,22 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 		return fmt.Errorf("varnishadm not available")
 	}
 
-	// Create test runner (pass varnishDir for varnishlog -n parameter)
-	testRunner := runner.New(varnishadm, "http://127.0.0.1:8080", varnishDir, logger)
+	// Create and start varnishlog recorder
+	rec, err := recorder.New(varnishDir, logger)
+	if err != nil {
+		return fmt.Errorf("creating recorder: %w", err)
+	}
+
+	if err := rec.Start(); err != nil {
+		return fmt.Errorf("starting recorder: %w", err)
+	}
+	defer rec.Stop()
+
+	// Give varnishlog time to connect to VSM
+	time.Sleep(500 * time.Millisecond)
+
+	// Create test runner
+	testRunner := runner.New(varnishadm, "http://127.0.0.1:8080", varnishDir, logger, rec)
 
 	// Run tests
 	passed := 0

@@ -2,6 +2,17 @@
 
 VCLTest is a declarative testing framework for Varnish Configuration Language (VCL) that provides automatic execution tracing and clear error reporting.
 
+## Usage
+
+```bash
+vcltest <test-file.yaml>
+```
+
+Example:
+```bash
+vcltest examples/access-control.yaml
+```
+
 ## Features
 
 - **YAML-based tests** - Simple, declarative test format

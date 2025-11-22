@@ -54,10 +54,11 @@ type Runner struct {
 	varnishURL string
 	workDir    string
 	logger     *slog.Logger
+	recorder   *recorder.Recorder
 }
 
-// New creates a new test runner
-func New(varnishadm varnishadm.VarnishadmInterface, varnishURL, workDir string, logger *slog.Logger) *Runner {
+// New creates a new test runner with a recorder
+func New(varnishadm varnishadm.VarnishadmInterface, varnishURL, workDir string, logger *slog.Logger, rec *recorder.Recorder) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -66,6 +67,7 @@ func New(varnishadm varnishadm.VarnishadmInterface, varnishURL, workDir string, 
 		varnishURL: varnishURL,
 		workDir:    workDir,
 		logger:     logger,
+		recorder:   rec,
 	}
 }
 
@@ -129,31 +131,23 @@ func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
 		return nil, fmt.Errorf("VCL activation failed: %s", resp.Payload())
 	}
 
-	// Create and start recorder to capture VCL traces
-	rec, err := recorder.New(r.workDir, r.logger)
-	if err != nil {
-		return nil, fmt.Errorf("creating recorder: %w", err)
-	}
-
-	if err := rec.Start(); err != nil {
-		return nil, fmt.Errorf("starting recorder: %w", err)
+	// Mark current log position before making request
+	var logOffset int64
+	if r.recorder != nil {
+		logOffset, err = r.recorder.MarkPosition()
+		if err != nil {
+			r.logger.Warn("Failed to mark log position", "error", err)
+		}
 	}
 
 	// Make HTTP request to Varnish
 	response, err := client.MakeRequest(r.varnishURL, test.Request)
 	if err != nil {
-		rec.Stop() // Stop recorder even on error
 		return nil, fmt.Errorf("making request: %w", err)
 	}
 
 	// Give varnishlog time to process and flush writes
-	// Varnishlog with -g request waits for full transaction completion
 	time.Sleep(500 * time.Millisecond)
-
-	// Stop recorder
-	if err := rec.Stop(); err != nil {
-		r.logger.Warn("Failed to stop recorder", "error", err)
-	}
 
 	// Check assertions
 	assertResult := assertion.Check(test.Expect, response, mockBackend.GetCallCount())
@@ -167,14 +161,12 @@ func (r *Runner) RunTest(test testspec.TestSpec) (*TestResult, error) {
 	}
 
 	// If test failed, collect and attach trace information
-	if !assertResult.Passed {
-		messages, err := rec.GetVCLMessages()
+	if !assertResult.Passed && r.recorder != nil {
+		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages", "error", err)
 		} else {
-			r.logger.Info("DEBUG: VCL messages retrieved", "count", len(messages))
 			summary := recorder.GetTraceSummary(messages)
-			r.logger.Info("DEBUG: Trace summary", "executed_lines", len(summary.ExecutedLines), "backend_calls", summary.BackendCalls, "vcl_calls", len(summary.VCLCalls), "vcl_returns", len(summary.VCLReturns))
 			result.VCLTrace = &VCLTraceInfo{
 				ExecutedLines: summary.ExecutedLines,
 				BackendCalls:  summary.BackendCalls,
