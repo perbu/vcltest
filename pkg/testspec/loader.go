@@ -62,11 +62,42 @@ func validate(test *TestSpec) error {
 	if test.VCL == "" {
 		return fmt.Errorf("vcl field is required")
 	}
-	if test.Request.URL == "" {
-		return fmt.Errorf("request.url is required")
+
+	// Check if this is a scenario-based test or single-request test
+	isScenario := len(test.Scenario) > 0
+	isSingleRequest := test.Request.URL != ""
+
+	// Must be either scenario or single-request, not both
+	if isScenario && isSingleRequest {
+		return fmt.Errorf("test cannot have both 'scenario' and 'request' fields")
 	}
-	if test.Expect.Status == 0 {
-		return fmt.Errorf("expect.status is required")
+	if !isScenario && !isSingleRequest {
+		return fmt.Errorf("test must have either 'scenario' or 'request' field")
+	}
+
+	// Validate single-request test
+	if isSingleRequest {
+		if test.Expect.Status == 0 {
+			return fmt.Errorf("expect.status is required")
+		}
+	}
+
+	// Validate scenario-based test
+	if isScenario {
+		if len(test.Scenario) == 0 {
+			return fmt.Errorf("scenario must have at least one step")
+		}
+		for i, step := range test.Scenario {
+			if step.At == "" {
+				return fmt.Errorf("scenario step %d: 'at' field is required", i+1)
+			}
+			if step.Request.URL == "" {
+				return fmt.Errorf("scenario step %d: request.url is required", i+1)
+			}
+			if step.Expect.Status == 0 {
+				return fmt.Errorf("scenario step %d: expect.status is required", i+1)
+			}
+		}
 	}
 
 	return nil

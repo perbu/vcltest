@@ -36,6 +36,15 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 
 	logger.Debug("Loaded tests", "count", len(tests))
 
+	// Check if any tests are scenario-based (require time control)
+	hasScenarioTests := false
+	for _, test := range tests {
+		if test.IsScenario() {
+			hasScenarioTests = true
+			break
+		}
+	}
+
 	// Create temporary directories for Varnish
 	workDir, err := os.MkdirTemp("", "vcltest-work-*")
 	if err != nil {
@@ -69,6 +78,9 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 				AdminPort: 6082,
 				HTTP: []varnish.HTTPConfig{
 					{Address: "127.0.0.1", Port: 8080},
+				},
+				Time: varnish.TimeConfig{
+					Enabled: hasScenarioTests, // Enable faketime only if needed
 				},
 			},
 		},
@@ -123,6 +135,9 @@ func runTests(ctx context.Context, testFile string, verbose bool) error {
 
 	// Create test runner
 	testRunner := runner.New(varnishadm, "http://127.0.0.1:8080", varnishDir, logger, rec)
+
+	// Set time controller for scenario-based tests
+	testRunner.SetTimeController(manager)
 
 	// Run tests
 	passed := 0
