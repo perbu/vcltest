@@ -38,7 +38,12 @@ func MakeRequest(varnishURL string, req testspec.RequestSpec) (*Response, error)
 	}
 
 	// Make request
-	client := &http.Client{}
+	// Important: Don't follow redirects automatically - we want to test the redirect response itself
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)

@@ -104,8 +104,8 @@ func (w *includeWalker) walkFile(vclPath string, mainVCLPath string) error {
 	// Calculate relative path from main VCL directory
 	relativePath, err := filepath.Rel(w.mainVCLDir, absPath)
 	if err != nil {
-		// If we can't get a relative path, use the original path
-		relativePath = vclPath
+		// If we can't get a relative path, use just the filename
+		relativePath = filepath.Base(absPath)
 	}
 
 	// Add this file to processed files (main file will be first, then includes in order)

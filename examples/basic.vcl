@@ -25,15 +25,26 @@ sub vcl_backend_response {
     return (deliver);
 }
 
-sub vcl_deliver {
-    # Add VCL version header
-    set resp.http.X-VCL-Version = "4.1";
-    return (deliver);
-}
-
 sub vcl_synth {
+    # Headers for synthetic responses MUST be set here, not in vcl_deliver!
+    # vcl_deliver is NOT called for synthetic responses.
+    set resp.http.X-VCL-Version = "4.1";
+
     if (resp.status == 301) {
         set resp.http.Location = "/new-location";
     }
+
+    # Set the response body using synthetic()
+    # The second parameter to synth() is the reason phrase, not the body!
+    if (resp.status == 200 && resp.reason == "OK") {
+        synthetic("OK");
+    }
+
+    return (deliver);
+}
+
+sub vcl_deliver {
+    # Add VCL version header for non-synthetic responses
+    set resp.http.X-VCL-Version = "4.1";
     return (deliver);
 }
