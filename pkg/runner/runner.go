@@ -218,8 +218,12 @@ func (r *Runner) replaceBackendsInVCL(vclContent string, backends map[string]vcl
 		}
 	}
 
-	// Validate backends exist in VCL
-	validationResult, err := vclmod.ValidateBackends(vclContent, vclmodBackends)
+	// Parse VCL once and perform validation + modification
+	startParse := time.Now()
+	modifiedVCL, validationResult, err := vclmod.ValidateAndModifyBackends(vclContent, vclmodBackends)
+	parseDuration := time.Since(startParse)
+	r.logger.Debug("VCL parsing and modification completed", "duration_ms", parseDuration.Milliseconds())
+
 	if err != nil {
 		// Log validation errors
 		if validationResult != nil {
@@ -231,14 +235,10 @@ func (r *Runner) replaceBackendsInVCL(vclContent string, backends map[string]vcl
 	}
 
 	// Log warnings about unused backends
-	for _, warning := range validationResult.Warnings {
-		r.logger.Warn("Backend validation", "warning", warning)
-	}
-
-	// Perform AST-based modification
-	modifiedVCL, err := vclmod.ModifyBackends(vclContent, vclmodBackends)
-	if err != nil {
-		return "", fmt.Errorf("modifying backends in VCL: %w", err)
+	if validationResult != nil {
+		for _, warning := range validationResult.Warnings {
+			r.logger.Warn("Backend validation", "warning", warning)
+		}
 	}
 
 	r.logger.Debug("VCL backends modified using AST parser")

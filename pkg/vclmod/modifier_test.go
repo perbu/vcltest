@@ -5,6 +5,141 @@ import (
 	"testing"
 )
 
+// TestValidateAndModifyBackends_Success tests the combined operation with valid backends
+func TestValidateAndModifyBackends_Success(t *testing.T) {
+	vclContent := `vcl 4.1;
+
+backend api {
+    .host = "api.example.com";
+    .port = "443";
+}
+
+backend web {
+    .host = "web.example.com";
+    .port = "80";
+}
+`
+
+	backends := map[string]BackendAddress{
+		"api": {Host: "127.0.0.1", Port: "8001"},
+		"web": {Host: "127.0.0.1", Port: "8002"},
+	}
+
+	modified, result, err := ValidateAndModifyBackends(vclContent, backends)
+	if err != nil {
+		t.Fatalf("ValidateAndModifyBackends failed: %v", err)
+	}
+
+	// Check validation result
+	if len(result.Errors) > 0 {
+		t.Errorf("Expected no errors, got: %v", result.Errors)
+	}
+	if len(result.Warnings) > 0 {
+		t.Errorf("Expected no warnings, got: %v", result.Warnings)
+	}
+
+	// Check that both backends were modified
+	if !strings.Contains(modified, `"127.0.0.1"`) {
+		t.Errorf("Modified VCL doesn't contain expected host")
+	}
+	if !strings.Contains(modified, `"8001"`) {
+		t.Errorf("Modified VCL doesn't contain expected port 8001")
+	}
+	if !strings.Contains(modified, `"8002"`) {
+		t.Errorf("Modified VCL doesn't contain expected port 8002")
+	}
+
+	// Ensure original hosts are gone
+	if strings.Contains(modified, "api.example.com") {
+		t.Errorf("Modified VCL still contains original api host")
+	}
+	if strings.Contains(modified, "web.example.com") {
+		t.Errorf("Modified VCL still contains original web host")
+	}
+}
+
+// TestValidateAndModifyBackends_ValidationError tests error handling for missing backends
+func TestValidateAndModifyBackends_ValidationError(t *testing.T) {
+	vclContent := `vcl 4.1;
+
+backend api {
+    .host = "api.example.com";
+    .port = "443";
+}
+`
+
+	backends := map[string]BackendAddress{
+		"api":         {Host: "127.0.0.1", Port: "8001"},
+		"nonexistent": {Host: "127.0.0.1", Port: "9999"},
+	}
+
+	_, result, err := ValidateAndModifyBackends(vclContent, backends)
+	if err == nil {
+		t.Fatal("Expected error for nonexistent backend, got nil")
+	}
+
+	if result == nil {
+		t.Fatal("Expected validation result even on error")
+	}
+
+	if len(result.Errors) == 0 {
+		t.Error("Expected validation errors, got none")
+	}
+
+	// Check error message contains helpful info
+	errorStr := strings.Join(result.Errors, " ")
+	if !strings.Contains(errorStr, "nonexistent") {
+		t.Errorf("Error should mention the missing backend name")
+	}
+}
+
+// TestValidateAndModifyBackends_UnusedVCLBackend tests warning for unused backends
+func TestValidateAndModifyBackends_UnusedVCLBackend(t *testing.T) {
+	vclContent := `vcl 4.1;
+
+backend api {
+    .host = "api.example.com";
+    .port = "443";
+}
+
+backend unused {
+    .host = "unused.example.com";
+    .port = "80";
+}
+`
+
+	backends := map[string]BackendAddress{
+		"api": {Host: "127.0.0.1", Port: "8001"},
+	}
+
+	modified, result, err := ValidateAndModifyBackends(vclContent, backends)
+	if err != nil {
+		t.Fatalf("ValidateAndModifyBackends failed: %v", err)
+	}
+
+	// Check that we got a warning about unused backend
+	if len(result.Warnings) != 1 {
+		t.Errorf("Expected 1 warning about unused backend, got %d", len(result.Warnings))
+	}
+
+	if len(result.Warnings) > 0 && !strings.Contains(result.Warnings[0], "unused") {
+		t.Errorf("Warning should mention the unused backend: %v", result.Warnings[0])
+	}
+
+	// Check that api backend was modified
+	if !strings.Contains(modified, `"127.0.0.1"`) {
+		t.Errorf("Modified VCL doesn't contain expected host")
+	}
+	if !strings.Contains(modified, `"8001"`) {
+		t.Errorf("Modified VCL doesn't contain expected port")
+	}
+
+	// Unused backend should remain unchanged
+	if !strings.Contains(modified, "unused.example.com") {
+		t.Errorf("Unused backend should remain in VCL with original host")
+	}
+}
+
 // TestModifyBackends_PerfectMatch tests modifying all backends with perfect match
 func TestModifyBackends_PerfectMatch(t *testing.T) {
 	vclContent := `vcl 4.1;
