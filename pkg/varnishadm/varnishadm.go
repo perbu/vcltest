@@ -259,16 +259,7 @@ func (v *Server) Exec(cmd string) (VarnishResponse, error) {
 	}
 	select {
 	case resp := <-respCh:
-		if resp.statusCode != ClisOk {
-			// Don't warn for expected "already exists" or "already running" conditions
-			if resp.statusCode != 106 && resp.statusCode != 300 {
-				v.logger.Warn("command failed", "command", cmd, "status", resp.statusCode, "payload", truncatePayload(resp.payload, 200))
-			} else {
-				v.logger.Debug("command returned non-fatal status", "command", cmd, "status", resp.statusCode, "payload", truncatePayload(resp.payload, 100))
-			}
-		} else {
-			v.logger.Debug("command succeeded", "command", cmd, "status", resp.statusCode)
-		}
+		// Logging is already done in readFromConnection, so just return the response
 		return resp, nil
 	case <-time.After(defaultCmdTimeout):
 		v.logger.Error("Varnishadm command timed out", "command", cmd, "timeout", defaultCmdTimeout)
