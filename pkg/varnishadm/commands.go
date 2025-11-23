@@ -223,5 +223,5 @@ func (v *Server) TLSCertReload() (VarnishResponse, error) {
 
 // BanNukeCache nukes the entire cache by issuing a ban that matches everything
 func (v *Server) BanNukeCache() (VarnishResponse, error) {
-	return v.Exec("ban ~ .")
+	return v.Exec("ban req.url ~ .")
 }
