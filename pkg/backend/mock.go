@@ -71,6 +71,12 @@ func (m *MockBackend) handleRequest(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(key, value)
 	}
 
+	// Set Content-Length if body is present
+	// This must be done BEFORE WriteHeader() to ensure it's sent with correct length
+	if body != "" {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+	}
+
 	// Write status code
 	w.WriteHeader(status)
 

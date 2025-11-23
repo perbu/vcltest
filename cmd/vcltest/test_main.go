@@ -271,26 +271,45 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 	addresses := make(map[string]vcl.BackendAddress)
 	mockBackends := make(map[string]*backend.MockBackend)
 
-	// Collect all unique backend names
-	backendNames := make(map[string]bool)
+	// Collect backend configurations from all tests
+	// For shared VCL mode, we use the configuration from the FIRST test that defines each backend
+	backendConfigs := make(map[string]testspec.BackendSpec)
+
 	for _, test := range tests {
 		if len(test.Backends) > 0 {
-			for name := range test.Backends {
-				backendNames[name] = true
+			// Multi-backend mode
+			for name, spec := range test.Backends {
+				if _, exists := backendConfigs[name]; !exists {
+					backendConfigs[name] = spec
+				}
 			}
 		} else {
-			// Single backend mode
-			backendNames["default"] = true
+			// Single backend mode - use "default" backend
+			if _, exists := backendConfigs["default"]; !exists {
+				backendConfigs["default"] = test.Backend
+			}
 		}
 	}
 
-	// Start a mock backend for each name
-	for name := range backendNames {
-		cfg := backend.Config{
-			Status:  200,
-			Headers: make(map[string]string),
-			Body:    "",
+	// If no backends were found in tests, create a default one
+	if len(backendConfigs) == 0 {
+		backendConfigs["default"] = testspec.BackendSpec{
+			Status: 200,
 		}
+	}
+
+	// Start a mock backend for each configuration
+	for name, spec := range backendConfigs {
+		cfg := backend.Config{
+			Status:  spec.Status,
+			Headers: spec.Headers,
+			Body:    spec.Body,
+		}
+		// Apply default status if not set
+		if cfg.Status == 0 {
+			cfg.Status = 200
+		}
+
 		mock := backend.New(cfg)
 		addr, err := mock.Start()
 		if err != nil {
@@ -306,7 +325,7 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 
 		mockBackends[name] = mock
 		addresses[name] = vcl.BackendAddress{Host: host, Port: port}
-		logger.Debug("Started shared backend", "name", name, "address", addr)
+		logger.Debug("Started shared backend", "name", name, "address", addr, "body_len", len(spec.Body))
 	}
 
 	return addresses, mockBackends, nil

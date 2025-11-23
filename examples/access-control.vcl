@@ -14,7 +14,3 @@ sub vcl_recv {
     # Deny access if header is missing or wrong
     return (synth(403, "Forbidden"));
 }
-
-sub vcl_backend_response {
-    return (deliver);
-}
