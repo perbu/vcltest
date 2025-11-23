@@ -66,6 +66,9 @@ type Runner struct {
 	// VCL state for shared VCL across tests
 	loadedVCLName   string
 	loadedVCLSource string
+
+	// Mock backends for dynamic reconfiguration in scenario tests
+	mockBackends map[string]*backend.MockBackend
 }
 
 // New creates a new test runner with a recorder
@@ -85,6 +88,11 @@ func New(varnishadm varnishadm.VarnishadmInterface, varnishURL, workDir string, 
 // SetTimeController sets the time controller for temporal testing
 func (r *Runner) SetTimeController(tc TimeController) {
 	r.timeController = tc
+}
+
+// SetMockBackends sets the mock backend references for dynamic reconfiguration
+func (r *Runner) SetMockBackends(backends map[string]*backend.MockBackend) {
+	r.mockBackends = backends
 }
 
 // parseDuration parses a duration string like "0s", "30s", "2m" into time.Duration
@@ -317,6 +325,11 @@ func (r *Runner) UnloadVCL() error {
 	r.loadedVCLName = ""
 	r.loadedVCLSource = ""
 	return nil
+}
+
+// GetLoadedVCLSource returns the currently loaded VCL source code (for debugging)
+func (r *Runner) GetLoadedVCLSource() string {
+	return r.loadedVCLSource
 }
 
 // RunTest executes a single test case (legacy method - loads VCL per test)
@@ -751,6 +764,38 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 		// Advance time to this step's offset (absolute from test start)
 		if err := r.timeController.AdvanceTimeBy(offset); err != nil {
 			return nil, fmt.Errorf("step %d: failed to advance time: %w", stepIdx+1, err)
+		}
+
+		// Update backend configuration if specified in this step
+		if step.Backend.Status != 0 || len(step.Backend.Headers) > 0 || step.Backend.Body != "" {
+			if r.mockBackends != nil {
+				// Determine which backend to update (default or specific name)
+				backendName := "default"
+				if len(test.Backends) > 0 {
+					// For multi-backend tests, we would need a way to specify which backend
+					// For now, update all backends with the same config (legacy behavior)
+					for name := range test.Backends {
+						backendName = name
+						break
+					}
+				}
+
+				if mock, ok := r.mockBackends[backendName]; ok {
+					cfg := backend.Config{
+						Status:  step.Backend.Status,
+						Headers: step.Backend.Headers,
+						Body:    step.Backend.Body,
+					}
+					// Apply default status if not set
+					if cfg.Status == 0 {
+						cfg.Status = 200
+					}
+					mock.UpdateConfig(cfg)
+					r.logger.Debug("Updated backend config for step", "step", stepIdx+1, "backend", backendName, "status", cfg.Status)
+				} else {
+					r.logger.Warn("Backend not found for config update", "backend", backendName, "step", stepIdx+1)
+				}
+			}
 		}
 
 		r.logger.Debug("Executing scenario step", "step", stepIdx+1, "at", step.At)

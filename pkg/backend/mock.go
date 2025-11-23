@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 )
 
@@ -13,6 +14,7 @@ type MockBackend struct {
 	listener  net.Listener
 	callCount atomic.Int32
 	config    Config
+	configMu  sync.RWMutex // Protects config field
 }
 
 // Config defines the mock backend response configuration
@@ -57,23 +59,38 @@ func (m *MockBackend) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Increment call counter
 	m.callCount.Add(1)
 
+	// Read config with lock
+	m.configMu.RLock()
+	status := m.config.Status
+	headers := m.config.Headers
+	body := m.config.Body
+	m.configMu.RUnlock()
+
 	// Set response headers
-	for key, value := range m.config.Headers {
+	for key, value := range headers {
 		w.Header().Set(key, value)
 	}
 
 	// Write status code
-	w.WriteHeader(m.config.Status)
+	w.WriteHeader(status)
 
 	// Write body
-	if m.config.Body != "" {
-		_, _ = w.Write([]byte(m.config.Body))
+	if body != "" {
+		_, _ = w.Write([]byte(body))
 	}
 }
 
 // GetCallCount returns the number of times the backend has been called
 func (m *MockBackend) GetCallCount() int {
 	return int(m.callCount.Load())
+}
+
+// UpdateConfig atomically updates the backend response configuration
+// This allows changing the backend's behavior without restarting it
+func (m *MockBackend) UpdateConfig(newConfig Config) {
+	m.configMu.Lock()
+	defer m.configMu.Unlock()
+	m.config = newConfig
 }
 
 // Stop gracefully stops the mock backend

@@ -1,0 +1,38 @@
+name: Backend reconfiguration demo
+
+scenario:
+  # Step 1: Backend returns "Version 1" with Cache-Control
+  - at: "0s"
+    request:
+      url: /content
+    backend:
+      status: 200
+      headers:
+        Cache-Control: "max-age=30"
+        X-Backend-Version: "1"
+      body: "Version 1 content"
+    expect:
+      status: 200
+      cached: false
+
+  # Step 2: At 15s - cache hit, still serving Version 1
+  - at: "15s"
+    request:
+      url: /content
+    expect:
+      status: 200
+      cached: true
+
+  # Step 3: At 40s - cache expired, backend now returns Version 2
+  - at: "40s"
+    request:
+      url: /content
+    backend:
+      status: 200
+      headers:
+        Cache-Control: "max-age=30"
+        X-Backend-Version: "2"
+      body: "Version 2 content"
+    expect:
+      status: 200
+      cached: false
