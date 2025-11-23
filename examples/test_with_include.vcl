@@ -1,6 +1,6 @@
 vcl 4.1;
 
-include "/Users/perbu/git/perbu/vcltest/examples/included.vcl";
+include "included.vcl";
 
 backend default {
     .host = "127.0.0.1";

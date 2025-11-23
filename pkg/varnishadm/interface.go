@@ -30,6 +30,9 @@ type VarnishadmInterface interface {
 	ParamShow(name string) (VarnishResponse, error)
 	ParamSet(name, value string) (VarnishResponse, error)
 
+	// Ban commands
+	BanNukeCache() (VarnishResponse, error)
+
 	// Varnish Enterprise TLS commands
 	TLSCertList() (VarnishResponse, error)
 	TLSCertListStructured() (*TLSCertListResult, error)
