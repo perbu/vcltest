@@ -1,12 +1,15 @@
 github.com/borud/broker v1.0.2 h1:6zcuyEfHmBV6H3qFzwcHMFGpHkJAyKbarFAynPonvlQ=
 github.com/borud/broker v1.0.2/go.mod h1:WCNKpeDbJrx/YmETK+y7ZLfQlM7MTDrbiJltq0OBQe0=
+github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dghubble/trie v0.0.0-20201011220304-ed6d6b8add55 h1:3yKntgWb7KwnHd4nCVgCIUNQs4qRdua+jitRqGMxKys=
 github.com/dghubble/trie v0.0.0-20201011220304-ed6d6b8add55/go.mod h1:xNBeoT4V92/aNvuC3IJ2g59uxuKP4/kzvkpoHrb7v4A=
-github.com/perbu/vclparser v0.0.0-20251123095405-156e79641eb6 h1:t3y1diXuVWFAfyTK9bHTzkuRVjgIrmzZ0diDi1wsG1I=
-github.com/perbu/vclparser v0.0.0-20251123095405-156e79641eb6/go.mod h1:Ci44QhTNZoAFcPtr0ohFRIYBYEVELO5tY2jqFia88kM=
+github.com/perbu/vclparser v0.0.0-20251123183552-14568509436e h1:zGBS3eC+bb2z4O/Crx6KIg1cpQ1huCuohZJ2rwCVi/c=
+github.com/perbu/vclparser v0.0.0-20251123183552-14568509436e/go.mod h1:Ci44QhTNZoAFcPtr0ohFRIYBYEVELO5tY2jqFia88kM=
+github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
+github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=

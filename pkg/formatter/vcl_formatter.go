@@ -53,8 +53,16 @@ func FormatVCLWithTrace(vclSource string, executedLines []int, useColor bool) st
 	return output.String()
 }
 
-// FormatTestFailure formats a complete test failure message with VCL trace
-func FormatTestFailure(testName string, errors []string, vclSource string, executedLines []int, backendCalls int, vclFlow []string, useColor bool) string {
+// VCLFileInfo contains source and execution trace for a single VCL file
+type VCLFileInfo struct {
+	ConfigID      int
+	Filename      string
+	Source        string
+	ExecutedLines []int
+}
+
+// FormatTestFailure formats a complete test failure message with multi-file VCL trace
+func FormatTestFailure(testName string, errors []string, files []VCLFileInfo, backendCalls int, vclFlow []string, useColor bool) string {
 	var output strings.Builder
 
 	// Test name
@@ -74,14 +82,57 @@ func FormatTestFailure(testName string, errors []string, vclSource string, execu
 	}
 
 	// VCL execution trace
-	if len(executedLines) > 0 {
+	if len(files) > 0 {
 		if useColor {
 			fmt.Fprintf(&output, "\n%s%sVCL Execution Trace:%s\n", ColorBold, ColorYellow, ColorReset)
 		} else {
 			fmt.Fprintf(&output, "\nVCL Execution Trace:\n")
 		}
 
-		output.WriteString(FormatVCLWithTrace(vclSource, executedLines, useColor))
+		// Check if ANY user VCL was executed
+		totalExecutedLines := 0
+		for _, file := range files {
+			totalExecutedLines += len(file.ExecutedLines)
+		}
+
+		if totalExecutedLines == 0 {
+			// All execution was in built-in VCL
+			if useColor {
+				fmt.Fprintf(&output, "%s  (No user VCL executed - request handled entirely by built-in VCL)%s\n",
+					ColorGray, ColorReset)
+			} else {
+				fmt.Fprintf(&output, "  (No user VCL executed - request handled entirely by built-in VCL)\n")
+			}
+
+			// Still show main VCL for context, but all gray
+			if len(files) > 0 {
+				file := files[0] // Show main VCL at least
+				if useColor {
+					fmt.Fprintf(&output, "\n%s%s (config %d):%s\n", ColorBold, file.Filename, file.ConfigID, ColorReset)
+				} else {
+					fmt.Fprintf(&output, "\n%s (config %d):\n", file.Filename, file.ConfigID)
+				}
+				output.WriteString(FormatVCLWithTrace(file.Source, []int{}, useColor))
+			}
+		} else {
+			// Display each file with execution traces
+			for i, file := range files {
+				if i > 0 {
+					output.WriteString("\n") // Separator between files
+				}
+
+				// File header
+				if useColor {
+					fmt.Fprintf(&output, "%s%s (config %d):%s\n",
+						ColorBold, file.Filename, file.ConfigID, ColorReset)
+				} else {
+					fmt.Fprintf(&output, "%s (config %d):\n", file.Filename, file.ConfigID)
+				}
+
+				// VCL with trace markers
+				output.WriteString(FormatVCLWithTrace(file.Source, file.ExecutedLines, useColor))
+			}
+		}
 
 		// Additional trace info
 		if useColor {

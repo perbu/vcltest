@@ -206,12 +206,22 @@ func runTests(ctx context.Context, testFile string, verbose bool, cliVCL string,
 			passed++
 		} else {
 			// Display enhanced error output with VCL trace
-			if result.VCLTrace != nil && len(result.VCLTrace.ExecutedLines) > 0 {
+			if result.VCLTrace != nil && len(result.VCLTrace.Files) > 0 {
+				// Convert runner.VCLFileInfo to formatter.VCLFileInfo
+				var files []formatter.VCLFileInfo
+				for _, f := range result.VCLTrace.Files {
+					files = append(files, formatter.VCLFileInfo{
+						ConfigID:      f.ConfigID,
+						Filename:      f.Filename,
+						Source:        f.Source,
+						ExecutedLines: f.ExecutedLines,
+					})
+				}
+
 				output := formatter.FormatTestFailure(
 					result.TestName,
 					result.Errors,
-					result.VCLSource,
-					result.VCLTrace.ExecutedLines,
+					files,
 					result.VCLTrace.BackendCalls,
 					result.VCLTrace.VCLFlow,
 					useColor,

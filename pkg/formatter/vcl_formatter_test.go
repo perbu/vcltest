@@ -72,11 +72,19 @@ func TestFormatTestFailure(t *testing.T) {
 	executedLines := []int{1, 2}
 	vclFlow := []string{"vcl_recv", "pass"}
 
+	files := []VCLFileInfo{
+		{
+			ConfigID:      0,
+			Filename:      "/path/to/main.vcl",
+			Source:        vclSource,
+			ExecutedLines: executedLines,
+		},
+	}
+
 	result := FormatTestFailure(
 		"Test name",
 		errors,
-		vclSource,
-		executedLines,
+		files,
 		1,
 		vclFlow,
 		false,

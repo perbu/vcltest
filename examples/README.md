@@ -11,6 +11,7 @@ This directory contains example VCL tests demonstrating various testing patterns
 | [cache-ttl](#cache-ttl) | Cache expiration testing | Time manipulation, cache hit/miss detection, age assertions |
 | [routing](#routing) | Multi-backend routing | Backend selection, multiple mock backends |
 | [error-demo](#error-demo) | Test failure visualization | VCL execution tracing on failure |
+| [failing-include-demo](#failing-include-demo) | Multi-file trace display | Include files, built-in VCL filtering, multi-file execution traces |
 | [overhead](#overhead) | Performance benchmarking | Shared VCL mode for fast multi-test execution |
 
 ## Examples
@@ -132,6 +133,41 @@ vcltest examples/error-demo.yaml
 ```
 
 Expected output: Test failure with annotated VCL showing which lines executed.
+
+---
+
+### failing-include-demo
+
+**Files:** `failing_include_demo.vcl`, `failing_include_lib.vcl`, `failing_include_test.yaml`, `demo_output.txt`, `FAILING_INCLUDE_DEMO.md`
+
+**Purpose:** Demonstrates multi-file VCL trace output showing execution across main VCL, included files, and built-in VCL.
+
+**What it shows:**
+- Execution flow from main VCL into included subroutine
+- Each VCL file displayed separately with its own config ID
+- Built-in VCL automatically filtered from trace (but shown in VCL Flow)
+- Green checkmarks on executed lines across multiple files
+- Header manipulation in included file
+
+**Execution flow:**
+1. Main VCL (`failing_include_demo.vcl`): Detects `/admin` request and calls include
+2. Include VCL (`failing_include_lib.vcl`): Sets `X-Admin-Request` and `X-Admin-Authorized` headers
+3. Built-in VCL: Handles caching decision (NOT shown in trace, only in flow)
+
+**Key concepts:**
+- **Multi-file traces**: Each user VCL file (main + includes) shown separately
+- **Config IDs**: Main is config 0, first include is config 1, etc.
+- **Built-in filtering**: Varnish built-in VCL (config 2+) is automatically hidden
+- **Execution visibility**: See exactly which lines ran in which files
+- **VCL Flow**: Shows built-in subroutines (HASH, DELIVER) without their code
+
+**See it:**
+```bash
+cat examples/demo_output.txt
+# or read FAILING_INCLUDE_DEMO.md for detailed explanation
+```
+
+**Current limitation:** The VCL parser doesn't support `include` directives yet, so this test can't actually run. The files demonstrate what the output WILL look like once includes are supported. The infrastructure is ready.
 
 ---
 

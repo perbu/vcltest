@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -35,18 +36,25 @@ func sanitizeVCLName(name string) string {
 
 // TestResult represents the outcome of a single test
 type TestResult struct {
-	TestName  string
-	Passed    bool
-	Errors    []string
-	VCLTrace  *VCLTraceInfo // VCL execution trace (only populated on failure)
-	VCLSource string        // Original VCL source code
+	TestName string
+	Passed   bool
+	Errors   []string
+	VCLTrace *VCLTraceInfo // VCL execution trace (only populated on failure)
 }
 
 // VCLTraceInfo contains VCL execution trace information
 type VCLTraceInfo struct {
-	ExecutedLines []int
-	BackendCalls  int
-	VCLFlow       []string
+	Files        []VCLFileInfo // VCL files with execution traces (main + includes)
+	BackendCalls int
+	VCLFlow      []string
+}
+
+// VCLFileInfo contains source and execution trace for a single VCL file
+type VCLFileInfo struct {
+	ConfigID      int    // Config ID from Varnish
+	Filename      string // Full path to VCL file
+	Source        string // VCL source code
+	ExecutedLines []int  // Lines that executed in this file
 }
 
 // TimeController interface for time manipulation in tests
@@ -64,8 +72,8 @@ type Runner struct {
 	timeController TimeController // Optional: for temporal testing
 
 	// VCL state for shared VCL across tests
-	loadedVCLName   string
-	loadedVCLSource string
+	loadedVCLName string
+	vclShowResult *varnishadm.VCLShowResult // VCL structure from Varnish (source of truth)
 
 	// Mock backends for dynamic reconfiguration in scenario tests
 	mockBackends map[string]*backend.MockBackend
@@ -208,7 +216,7 @@ func (bm *backendManager) getTotalCallCount() int {
 }
 
 // replaceBackendsInVCL performs backend replacement using AST-based modification
-func (r *Runner) replaceBackendsInVCL(vclContent string, backends map[string]vcl.BackendAddress) (string, error) {
+func (r *Runner) replaceBackendsInVCL(vclContent string, vclPath string, backends map[string]vcl.BackendAddress) (string, error) {
 	// Convert to vclmod.BackendAddress type
 	vclmodBackends := make(map[string]vclmod.BackendAddress)
 	for name, addr := range backends {
@@ -220,7 +228,7 @@ func (r *Runner) replaceBackendsInVCL(vclContent string, backends map[string]vcl
 
 	// Parse VCL once and perform validation + modification
 	startParse := time.Now()
-	modifiedVCL, validationResult, err := vclmod.ValidateAndModifyBackends(vclContent, vclmodBackends)
+	modifiedVCL, validationResult, err := vclmod.ValidateAndModifyBackends(vclContent, vclPath, vclmodBackends)
 	parseDuration := time.Since(startParse)
 	r.logger.Debug("VCL parsing and modification completed", "duration_ms", parseDuration.Milliseconds())
 
@@ -245,37 +253,119 @@ func (r *Runner) replaceBackendsInVCL(vclContent string, backends map[string]vcl
 	return modifiedVCL, nil
 }
 
+// extractVCLFiles splits VCLShowResult into per-file info with execution traces
+// Uses varnishd's native config ID mapping from vcl.show -v
+func (r *Runner) extractVCLFiles(vclShow *varnishadm.VCLShowResult, execByConfig map[int][]int) []VCLFileInfo {
+	var files []VCLFileInfo
+
+	// VCLSource contains all files concatenated (headers already stripped by parser)
+	// Use Entries with Size to split them back apart
+	sourceBytes := []byte(vclShow.VCLSource)
+	offset := 0
+
+	for _, entry := range vclShow.Entries {
+		// Skip builtin (not in ConfigMap)
+		if entry.Filename == "<builtin>" {
+			// Still need to advance offset if builtin is in the source
+			if offset+entry.Size <= len(sourceBytes) {
+				offset += entry.Size
+			}
+			continue
+		}
+
+		// Extract this file's source using size
+		if offset+entry.Size > len(sourceBytes) {
+			r.logger.Warn("VCL size mismatch", "config", entry.ConfigID, "filename", entry.Filename,
+				"expected", entry.Size, "available", len(sourceBytes)-offset)
+			break
+		}
+
+		fileSource := string(sourceBytes[offset : offset+entry.Size])
+
+		files = append(files, VCLFileInfo{
+			ConfigID:      entry.ConfigID,
+			Filename:      entry.Filename,
+			Source:        fileSource,
+			ExecutedLines: execByConfig[entry.ConfigID], // Empty if not executed
+		})
+
+		offset += entry.Size
+	}
+
+	return files
+}
+
 // LoadVCL loads VCL file and prepares it for sharing across all tests
 func (r *Runner) LoadVCL(vclPath string, backends map[string]vcl.BackendAddress) error {
-	// Read VCL file
-	vclData, err := os.ReadFile(vclPath)
+	// Convert to vclmod.BackendAddress type
+	vclmodBackends := make(map[string]vclmod.BackendAddress)
+	for name, addr := range backends {
+		vclmodBackends[name] = vclmod.BackendAddress{
+			Host: addr.Host,
+			Port: addr.Port,
+		}
+	}
+
+	// Process VCL with includes - walks the include tree and modifies each file
+	startProcess := time.Now()
+	processedFiles, validationResult, err := vclmod.ProcessVCLWithIncludes(vclPath, vclmodBackends)
+	processDuration := time.Since(startProcess)
+	r.logger.Debug("VCL processing with includes completed",
+		"duration_ms", processDuration.Milliseconds(),
+		"files", len(processedFiles))
+
 	if err != nil {
-		return fmt.Errorf("reading VCL file: %w", err)
+		// Log validation errors
+		if validationResult != nil {
+			for _, errMsg := range validationResult.Errors {
+				r.logger.Error("Backend validation failed", "error", errMsg)
+			}
+		}
+		return fmt.Errorf("processing VCL with includes: %w", err)
 	}
 
-	// Replace backend addresses using AST-based modification
-	modifiedVCL, err := r.replaceBackendsInVCL(string(vclData), backends)
+	// Log warnings about unused backends
+	if validationResult != nil {
+		for _, warning := range validationResult.Warnings {
+			r.logger.Warn("Backend validation", "warning", warning)
+		}
+	}
+
+	// Create a temporary directory for the VCL files
+	tmpDir, err := os.MkdirTemp("", "vcltest-shared-*")
 	if err != nil {
-		return fmt.Errorf("replacing backends in VCL: %w", err)
+		return fmt.Errorf("creating temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Write each processed file to tmpDir preserving directory structure
+	var mainVCLFile string
+	for _, file := range processedFiles {
+		// Determine output path in tmpDir
+		outPath := filepath.Join(tmpDir, file.RelativePath)
+
+		// Create parent directories if needed
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", file.RelativePath, err)
+		}
+
+		// Write the modified content
+		if err := os.WriteFile(outPath, []byte(file.Content), 0644); err != nil {
+			return fmt.Errorf("writing modified VCL %s: %w", file.RelativePath, err)
+		}
+
+		r.logger.Debug("Wrote modified VCL file", "path", outPath, "relative", file.RelativePath)
+
+		// Track main VCL file (the first one processed is the main file)
+		if mainVCLFile == "" {
+			mainVCLFile = outPath
+		}
 	}
 
-	// Write modified VCL to temporary file
-	tmpFile, err := os.CreateTemp("", "vcltest-shared-*.vcl")
-	if err != nil {
-		return fmt.Errorf("creating temp VCL file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(modifiedVCL); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("writing temp VCL file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Load VCL into Varnish
+	// Load main VCL into Varnish (it will load includes automatically)
 	vclName := "shared-vcl"
 	vclLoadStart := time.Now()
-	resp, err := r.varnishadm.VCLLoad(vclName, tmpFile.Name())
+	resp, err := r.varnishadm.VCLLoad(vclName, mainVCLFile)
 	if err != nil {
 		return fmt.Errorf("loading VCL into Varnish: %w", err)
 	}
@@ -295,9 +385,16 @@ func (r *Runner) LoadVCL(vclPath string, backends map[string]vcl.BackendAddress)
 	}
 	r.logger.Debug("Shared VCL activated", "name", vclName, "duration_ms", time.Since(vclUseStart).Milliseconds())
 
+	// Fetch VCL structure from Varnish (source of truth for includes and config IDs)
+	vclShow, err := r.varnishadm.VCLShowStructured(vclName)
+	if err != nil {
+		return fmt.Errorf("fetching loaded VCL structure: %w", err)
+	}
+	r.logger.Debug("VCL structure retrieved", "configs", len(vclShow.Entries), "user_files", len(vclShow.ConfigMap))
+
 	// Store state
 	r.loadedVCLName = vclName
-	r.loadedVCLSource = modifiedVCL
+	r.vclShowResult = vclShow
 
 	return nil
 }
@@ -323,13 +420,16 @@ func (r *Runner) UnloadVCL() error {
 	}
 
 	r.loadedVCLName = ""
-	r.loadedVCLSource = ""
+	r.vclShowResult = nil
 	return nil
 }
 
 // GetLoadedVCLSource returns the currently loaded VCL source code (for debugging)
 func (r *Runner) GetLoadedVCLSource() string {
-	return r.loadedVCLSource
+	if r.vclShowResult != nil {
+		return r.vclShowResult.VCLSource
+	}
+	return ""
 }
 
 // RunTest executes a single test case (legacy method - loads VCL per test)
@@ -385,36 +485,60 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 	}
 	defer bm.stopAll()
 
-	// Load VCL file
-	vclData, err := os.ReadFile(vclPath)
+	// Convert to vclmod.BackendAddress type
+	vclmodBackends := make(map[string]vclmod.BackendAddress)
+	for name, addr := range addresses {
+		vclmodBackends[name] = vclmod.BackendAddress{
+			Host: addr.Host,
+			Port: addr.Port,
+		}
+	}
+
+	// Process VCL with includes
+	processedFiles, validationResult, err := vclmod.ProcessVCLWithIncludes(vclPath, vclmodBackends)
 	if err != nil {
-		return nil, fmt.Errorf("reading VCL file: %w", err)
+		if validationResult != nil {
+			for _, errMsg := range validationResult.Errors {
+				r.logger.Error("Backend validation failed", "error", errMsg)
+			}
+		}
+		return nil, fmt.Errorf("processing VCL with includes: %w", err)
 	}
 
-	// Replace backend addresses using AST-based modification
-	modifiedVCL, err := r.replaceBackendsInVCL(string(vclData), addresses)
+	// Log warnings
+	if validationResult != nil {
+		for _, warning := range validationResult.Warnings {
+			r.logger.Warn("Backend validation", "warning", warning)
+		}
+	}
+
+	// Create temp directory for VCL files
+	tmpDir, err := os.MkdirTemp("", "vcltest-*.vcl")
 	if err != nil {
-		return nil, fmt.Errorf("replacing backends in VCL: %w", err)
+		return nil, fmt.Errorf("creating temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Write each processed file
+	var mainVCLFile string
+	for _, file := range processedFiles {
+		outPath := filepath.Join(tmpDir, file.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return nil, fmt.Errorf("creating directory for %s: %w", file.RelativePath, err)
+		}
+		if err := os.WriteFile(outPath, []byte(file.Content), 0644); err != nil {
+			return nil, fmt.Errorf("writing VCL file %s: %w", file.RelativePath, err)
+		}
+		if mainVCLFile == "" {
+			mainVCLFile = outPath
+		}
 	}
 
-	// Write modified VCL to temporary file
-	tmpFile, err := os.CreateTemp("", "vcltest-*.vcl")
-	if err != nil {
-		return nil, fmt.Errorf("creating temp VCL file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(modifiedVCL); err != nil {
-		tmpFile.Close()
-		return nil, fmt.Errorf("writing temp VCL file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Load VCL into Varnish
+	// Load VCL into Varnish (varnishd will load includes automatically)
 	// Sanitize VCL name - remove spaces and special characters
 	vclName := sanitizeVCLName(test.Name)
 	vclLoadStart := time.Now()
-	resp, err := r.varnishadm.VCLLoad(vclName, tmpFile.Name())
+	resp, err := r.varnishadm.VCLLoad(vclName, mainVCLFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading VCL into Varnish: %w", err)
 	}
@@ -433,6 +557,12 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 		return nil, fmt.Errorf("VCL activation failed: %s", resp.Payload())
 	}
 	r.logger.Debug("VCL activated", "name", vclName, "duration_ms", time.Since(vclUseStart).Milliseconds())
+
+	// Fetch VCL structure from Varnish for trace correlation
+	vclShow, err := r.varnishadm.VCLShowStructured(vclName)
+	if err != nil {
+		r.logger.Warn("Failed to fetch VCL structure", "error", err)
+	}
 
 	// Mark current log position before making request
 	var logOffset int64
@@ -476,23 +606,28 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 
 	// Prepare test result
 	result := &TestResult{
-		TestName:  test.Name,
-		Passed:    assertResult.Passed,
-		Errors:    assertResult.Errors,
-		VCLSource: modifiedVCL,
+		TestName: test.Name,
+		Passed:   assertResult.Passed,
+		Errors:   assertResult.Errors,
 	}
 
 	// If test failed, collect and attach trace information
-	if !assertResult.Passed && r.recorder != nil {
+	if !assertResult.Passed && r.recorder != nil && vclShow != nil {
 		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages", "error", err)
 		} else {
+			// Get per-config execution using ConfigMap from Varnish
+			execByConfig := recorder.GetExecutedLinesByConfig(messages, vclShow.ConfigMap)
+
+			// Extract VCL files with execution traces
+			files := r.extractVCLFiles(vclShow, execByConfig)
+
 			summary := recorder.GetTraceSummary(messages)
 			result.VCLTrace = &VCLTraceInfo{
-				ExecutedLines: summary.ExecutedLines,
-				BackendCalls:  summary.BackendCalls,
-				VCLFlow:       append(summary.VCLCalls, summary.VCLReturns...),
+				Files:        files,
+				BackendCalls: summary.BackendCalls,
+				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}
@@ -559,23 +694,28 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 
 	// Prepare test result
 	result := &TestResult{
-		TestName:  test.Name,
-		Passed:    assertResult.Passed,
-		Errors:    assertResult.Errors,
-		VCLSource: r.loadedVCLSource,
+		TestName: test.Name,
+		Passed:   assertResult.Passed,
+		Errors:   assertResult.Errors,
 	}
 
 	// If test failed, collect and attach trace information
-	if !assertResult.Passed && r.recorder != nil {
+	if !assertResult.Passed && r.recorder != nil && r.vclShowResult != nil {
 		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages", "error", err)
 		} else {
+			// Get per-config execution using ConfigMap from stored VCLShowResult
+			execByConfig := recorder.GetExecutedLinesByConfig(messages, r.vclShowResult.ConfigMap)
+
+			// Extract VCL files with execution traces
+			files := r.extractVCLFiles(r.vclShowResult, execByConfig)
+
 			summary := recorder.GetTraceSummary(messages)
 			result.VCLTrace = &VCLTraceInfo{
-				ExecutedLines: summary.ExecutedLines,
-				BackendCalls:  summary.BackendCalls,
-				VCLFlow:       append(summary.VCLCalls, summary.VCLReturns...),
+				Files:        files,
+				BackendCalls: summary.BackendCalls,
+				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}
@@ -596,34 +736,58 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 	}
 	defer bm.stopAll()
 
-	// Load VCL file
-	vclData, err := os.ReadFile(vclPath)
+	// Convert to vclmod.BackendAddress type
+	vclmodBackends := make(map[string]vclmod.BackendAddress)
+	for name, addr := range addresses {
+		vclmodBackends[name] = vclmod.BackendAddress{
+			Host: addr.Host,
+			Port: addr.Port,
+		}
+	}
+
+	// Process VCL with includes
+	processedFiles, validationResult, err := vclmod.ProcessVCLWithIncludes(vclPath, vclmodBackends)
 	if err != nil {
-		return nil, fmt.Errorf("reading VCL file: %w", err)
+		if validationResult != nil {
+			for _, errMsg := range validationResult.Errors {
+				r.logger.Error("Backend validation failed", "error", errMsg)
+			}
+		}
+		return nil, fmt.Errorf("processing VCL with includes: %w", err)
 	}
 
-	// Replace backend addresses using AST-based modification
-	modifiedVCL, err := r.replaceBackendsInVCL(string(vclData), addresses)
+	// Log warnings
+	if validationResult != nil {
+		for _, warning := range validationResult.Warnings {
+			r.logger.Warn("Backend validation", "warning", warning)
+		}
+	}
+
+	// Create temp directory for VCL files
+	tmpDir, err := os.MkdirTemp("", "vcltest-*.vcl")
 	if err != nil {
-		return nil, fmt.Errorf("replacing backends in VCL: %w", err)
+		return nil, fmt.Errorf("creating temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Write each processed file
+	var mainVCLFile string
+	for _, file := range processedFiles {
+		outPath := filepath.Join(tmpDir, file.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return nil, fmt.Errorf("creating directory for %s: %w", file.RelativePath, err)
+		}
+		if err := os.WriteFile(outPath, []byte(file.Content), 0644); err != nil {
+			return nil, fmt.Errorf("writing VCL file %s: %w", file.RelativePath, err)
+		}
+		if mainVCLFile == "" {
+			mainVCLFile = outPath
+		}
 	}
 
-	// Write modified VCL to temporary file
-	tmpFile, err := os.CreateTemp("", "vcltest-*.vcl")
-	if err != nil {
-		return nil, fmt.Errorf("creating temp VCL file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(modifiedVCL); err != nil {
-		tmpFile.Close()
-		return nil, fmt.Errorf("writing temp VCL file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Load VCL into Varnish
+	// Load VCL into Varnish (varnishd will load includes automatically)
 	vclName := sanitizeVCLName(test.Name)
-	resp, err := r.varnishadm.VCLLoad(vclName, tmpFile.Name())
+	resp, err := r.varnishadm.VCLLoad(vclName, mainVCLFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading VCL into Varnish: %w", err)
 	}
@@ -638,6 +802,12 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 	}
 	if resp.StatusCode() != varnishadm.ClisOk {
 		return nil, fmt.Errorf("VCL activation failed: %s", resp.Payload())
+	}
+
+	// Fetch VCL structure from Varnish for trace correlation
+	vclShow, err := r.varnishadm.VCLShowStructured(vclName)
+	if err != nil {
+		r.logger.Warn("Failed to fetch VCL structure", "error", err)
 	}
 
 	// Execute scenario steps
@@ -706,24 +876,29 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 
 	// Prepare test result
 	result := &TestResult{
-		TestName:  test.Name,
-		Passed:    len(allErrors) == 0,
-		Errors:    allErrors,
-		VCLSource: modifiedVCL,
+		TestName: test.Name,
+		Passed:   len(allErrors) == 0,
+		Errors:   allErrors,
 	}
 
 	// If test failed, collect and attach trace information from first failed step
-	if !result.Passed && r.recorder != nil && firstFailedStep >= 0 {
+	if !result.Passed && r.recorder != nil && vclShow != nil && firstFailedStep >= 0 {
 		// Get all messages for the entire test
 		messages, err := r.recorder.GetVCLMessages()
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages", "error", err)
 		} else {
+			// Get per-config execution using ConfigMap from Varnish
+			execByConfig := recorder.GetExecutedLinesByConfig(messages, vclShow.ConfigMap)
+
+			// Extract VCL files with execution traces
+			files := r.extractVCLFiles(vclShow, execByConfig)
+
 			summary := recorder.GetTraceSummary(messages)
 			result.VCLTrace = &VCLTraceInfo{
-				ExecutedLines: summary.ExecutedLines,
-				BackendCalls:  summary.BackendCalls,
-				VCLFlow:       append(summary.VCLCalls, summary.VCLReturns...),
+				Files:        files,
+				BackendCalls: summary.BackendCalls,
+				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}
@@ -848,23 +1023,28 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 
 	// Prepare test result
 	result := &TestResult{
-		TestName:  test.Name,
-		Passed:    len(allErrors) == 0,
-		Errors:    allErrors,
-		VCLSource: r.loadedVCLSource,
+		TestName: test.Name,
+		Passed:   len(allErrors) == 0,
+		Errors:   allErrors,
 	}
 
 	// If test failed, collect and attach trace information
-	if !result.Passed && r.recorder != nil && firstFailedStep >= 0 {
+	if !result.Passed && r.recorder != nil && r.vclShowResult != nil && firstFailedStep >= 0 {
 		messages, err := r.recorder.GetVCLMessages()
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages", "error", err)
 		} else {
+			// Get per-config execution using ConfigMap from stored VCLShowResult
+			execByConfig := recorder.GetExecutedLinesByConfig(messages, r.vclShowResult.ConfigMap)
+
+			// Extract VCL files with execution traces
+			files := r.extractVCLFiles(r.vclShowResult, execByConfig)
+
 			summary := recorder.GetTraceSummary(messages)
 			result.VCLTrace = &VCLTraceInfo{
-				ExecutedLines: summary.ExecutedLines,
-				BackendCalls:  summary.BackendCalls,
-				VCLFlow:       append(summary.VCLCalls, summary.VCLReturns...),
+				Files:        files,
+				BackendCalls: summary.BackendCalls,
+				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}

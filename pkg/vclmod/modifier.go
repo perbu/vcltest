@@ -2,6 +2,7 @@ package vclmod
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/perbu/vclparser/pkg/ast"
@@ -23,10 +24,18 @@ type ValidationResult struct {
 
 // ValidateAndModifyBackends parses VCL once, validates backends, and modifies them in a single pass.
 // This is more efficient than calling ValidateBackends and ModifyBackends separately.
+// The vclPath parameter is used to resolve include directives relative to the VCL file's directory.
 // Returns: (modifiedVCL, validationResult, error)
-func ValidateAndModifyBackends(vclContent string, backends map[string]BackendAddress) (string, *ValidationResult, error) {
-	// Parse VCL once to get AST
-	root, err := parser.Parse(vclContent, "test.vcl")
+func ValidateAndModifyBackends(vclContent string, vclPath string, backends map[string]BackendAddress) (string, *ValidationResult, error) {
+	// Get the directory of the VCL file for resolving includes
+	vclDir := filepath.Dir(vclPath)
+
+	// Parse VCL once to get AST, resolving includes
+	// Skip subroutine validation initially since subroutines may be in includes
+	root, err := parser.Parse(vclContent, vclPath,
+		parser.WithResolveIncludes(vclDir),
+		parser.WithSkipSubroutineValidation(true),
+	)
 	if err != nil {
 		return "", nil, fmt.Errorf("parsing VCL: %w", err)
 	}
@@ -129,14 +138,23 @@ func ValidateAndModifyBackends(vclContent string, backends map[string]BackendAdd
 
 	// Render modified AST back to VCL
 	modifiedVCL := renderer.Render(root)
+
 	return modifiedVCL, result, nil
 }
 
 // ValidateBackends checks that all YAML backends exist in VCL and warns about unused VCL backends
+// The vclPath parameter is used to resolve include directives relative to the VCL file's directory.
 // Returns validation result with warnings for unused VCL backends and errors for missing backends
-func ValidateBackends(vclContent string, yamlBackends map[string]BackendAddress) (*ValidationResult, error) {
-	// Parse VCL to get AST
-	root, err := parser.Parse(vclContent, "test.vcl")
+func ValidateBackends(vclContent string, vclPath string, yamlBackends map[string]BackendAddress) (*ValidationResult, error) {
+	// Get the directory of the VCL file for resolving includes
+	vclDir := filepath.Dir(vclPath)
+
+	// Parse VCL to get AST, resolving includes
+	// Skip subroutine validation initially since subroutines may be in includes
+	root, err := parser.Parse(vclContent, vclPath,
+		parser.WithResolveIncludes(vclDir),
+		parser.WithSkipSubroutineValidation(true),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing VCL: %w", err)
 	}
@@ -196,10 +214,18 @@ func ValidateBackends(vclContent string, yamlBackends map[string]BackendAddress)
 }
 
 // ModifyBackends parses VCL, replaces backend addresses, and returns modified VCL
+// The vclPath parameter is used to resolve include directives relative to the VCL file's directory.
 // This function modifies the VCL AST to replace .host and .port for each backend
-func ModifyBackends(vclContent string, backends map[string]BackendAddress) (string, error) {
-	// Parse VCL to get AST
-	root, err := parser.Parse(vclContent, "test.vcl")
+func ModifyBackends(vclContent string, vclPath string, backends map[string]BackendAddress) (string, error) {
+	// Get the directory of the VCL file for resolving includes
+	vclDir := filepath.Dir(vclPath)
+
+	// Parse VCL to get AST, resolving includes
+	// Skip subroutine validation initially since subroutines may be in includes
+	root, err := parser.Parse(vclContent, vclPath,
+		parser.WithResolveIncludes(vclDir),
+		parser.WithSkipSubroutineValidation(true),
+	)
 	if err != nil {
 		return "", fmt.Errorf("parsing VCL: %w", err)
 	}

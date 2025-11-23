@@ -1,0 +1,8 @@
+name: "Test VCL trace display on failure"
+
+request:
+  method: GET
+  url: /test
+
+expect:
+  status: 404  # This will fail - we'll get 200

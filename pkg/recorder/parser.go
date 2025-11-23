@@ -71,37 +71,59 @@ func ParseBackendCall(msg Message) (BackendCall, bool) {
 	}, true
 }
 
-// GetExecutedLines extracts line numbers from VCL trace messages
-// Only returns lines from user VCL (config=0), filters out built-in VCL
-// Removes duplicates and returns sorted unique line numbers
-func GetExecutedLines(messages []Message) []int {
-	lineMap := make(map[int]bool)
+// GetExecutedLinesByConfig extracts line numbers from VCL trace messages per config ID
+// Only includes config IDs present in configMap (filters out built-in VCL)
+// Returns map of config ID to sorted list of executed line numbers
+func GetExecutedLinesByConfig(messages []Message, configMap map[int]string) map[int][]int {
+	// map[configID]map[lineNumber]bool for deduplication
+	execByConfig := make(map[int]map[int]bool)
 
 	for _, msg := range messages {
 		if trace, ok := ParseVCLTrace(msg); ok {
-			// Only include user VCL (config 0)
-			if trace.Config == 0 {
-				lineMap[trace.Line] = true
+			// Only include if config ID is in user's ConfigMap
+			if _, isUserVCL := configMap[trace.Config]; isUserVCL {
+				if execByConfig[trace.Config] == nil {
+					execByConfig[trace.Config] = make(map[int]bool)
+				}
+				execByConfig[trace.Config][trace.Line] = true
 			}
 		}
 	}
 
-	// Convert map to sorted slice
-	lines := make([]int, 0, len(lineMap))
-	for line := range lineMap {
-		lines = append(lines, line)
-	}
+	// Convert to sorted slices
+	result := make(map[int][]int)
+	for configID, lineMap := range execByConfig {
+		lines := make([]int, 0, len(lineMap))
+		for line := range lineMap {
+			lines = append(lines, line)
+		}
 
-	// Sort the lines
-	for i := 0; i < len(lines); i++ {
-		for j := i + 1; j < len(lines); j++ {
-			if lines[i] > lines[j] {
-				lines[i], lines[j] = lines[j], lines[i]
+		// Sort the lines
+		for i := 0; i < len(lines); i++ {
+			for j := i + 1; j < len(lines); j++ {
+				if lines[i] > lines[j] {
+					lines[i], lines[j] = lines[j], lines[i]
+				}
 			}
 		}
+
+		result[configID] = lines
 	}
 
-	return lines
+	return result
+}
+
+// GetExecutedLines extracts line numbers from VCL trace messages
+// Only returns lines from user VCL (config=0), filters out built-in VCL
+// Removes duplicates and returns sorted unique line numbers
+// This is a legacy function that only returns config=0 lines for backward compatibility
+func GetExecutedLines(messages []Message) []int {
+	configMap := map[int]string{0: "main"}
+	byConfig := GetExecutedLinesByConfig(messages, configMap)
+	if lines, ok := byConfig[0]; ok {
+		return lines
+	}
+	return []int{}
 }
 
 // CountBackendCalls counts the number of BackendOpen messages

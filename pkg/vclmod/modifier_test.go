@@ -25,7 +25,7 @@ backend web {
 		"web": {Host: "127.0.0.1", Port: "8002"},
 	}
 
-	modified, result, err := ValidateAndModifyBackends(vclContent, backends)
+	modified, result, err := ValidateAndModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ValidateAndModifyBackends failed: %v", err)
 	}
@@ -73,7 +73,7 @@ backend api {
 		"nonexistent": {Host: "127.0.0.1", Port: "9999"},
 	}
 
-	_, result, err := ValidateAndModifyBackends(vclContent, backends)
+	_, result, err := ValidateAndModifyBackends(vclContent, "test.vcl", backends)
 	if err == nil {
 		t.Fatal("Expected error for nonexistent backend, got nil")
 	}
@@ -112,7 +112,7 @@ backend unused {
 		"api": {Host: "127.0.0.1", Port: "8001"},
 	}
 
-	modified, result, err := ValidateAndModifyBackends(vclContent, backends)
+	modified, result, err := ValidateAndModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ValidateAndModifyBackends failed: %v", err)
 	}
@@ -160,7 +160,7 @@ backend web {
 		"web": {Host: "127.0.0.1", Port: "8002"},
 	}
 
-	modified, err := ModifyBackends(vclContent, backends)
+	modified, err := ModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ModifyBackends failed: %v", err)
 	}
@@ -199,7 +199,7 @@ backend default {
 		"default": {Host: "127.0.0.1", Port: "9000"},
 	}
 
-	modified, err := ModifyBackends(vclContent, backends)
+	modified, err := ModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ModifyBackends failed: %v", err)
 	}
@@ -228,7 +228,7 @@ backend api {
 		"api": {Host: "127.0.0.1", Port: "8080"},
 	}
 
-	modified, err := ModifyBackends(vclContent, backends)
+	modified, err := ModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ModifyBackends failed: %v", err)
 	}
@@ -261,7 +261,7 @@ backend legacy {
 		"api": {Host: "127.0.0.1", Port: "9001"},
 	}
 
-	modified, err := ModifyBackends(vclContent, backends)
+	modified, err := ModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ModifyBackends failed: %v", err)
 	}
@@ -298,7 +298,7 @@ backend web {
 		"web": {Host: "127.0.0.1", Port: "8002"},
 	}
 
-	result, err := ValidateBackends(vclContent, backends)
+	result, err := ValidateBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ValidateBackends should not error on perfect match: %v", err)
 	}
@@ -325,7 +325,7 @@ backend api {
 		"nonexist": {Host: "127.0.0.1", Port: "8002"}, // This doesn't exist in VCL
 	}
 
-	result, err := ValidateBackends(vclContent, backends)
+	result, err := ValidateBackends(vclContent, "test.vcl", backends)
 	if err == nil {
 		t.Fatal("ValidateBackends should error when YAML backend not in VCL")
 	}
@@ -362,7 +362,7 @@ backend unused {
 		// "unused" backend is not in YAML
 	}
 
-	result, err := ValidateBackends(vclContent, backends)
+	result, err := ValidateBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ValidateBackends should not error when VCL backend unused: %v", err)
 	}
@@ -400,7 +400,7 @@ sub vcl_recv {
 		"api": {Host: "127.0.0.1", Port: "8001"},
 	}
 
-	modified, err := ModifyBackends(vclContent, backends)
+	modified, err := ModifyBackends(vclContent, "test.vcl", backends)
 	if err != nil {
 		t.Fatalf("ModifyBackends failed: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestModifyBackends_InvalidVCL(t *testing.T) {
 		"api": {Host: "127.0.0.1", Port: "8001"},
 	}
 
-	_, err := ModifyBackends(vclContent, backends)
+	_, err := ModifyBackends(vclContent, "test.vcl", backends)
 	if err == nil {
 		t.Fatal("ModifyBackends should error on invalid VCL")
 	}
@@ -444,7 +444,7 @@ sub vcl_recv {
 		"api": {Host: "127.0.0.1", Port: "8001"},
 	}
 
-	result, err := ValidateBackends(vclContent, backends)
+	result, err := ValidateBackends(vclContent, "test.vcl", backends)
 	if err == nil {
 		t.Fatal("ValidateBackends should error when no backends in VCL")
 	}
