@@ -219,7 +219,7 @@ Orchestrates test execution and coordinates all components. Supports both single
 
 - `New()` - Creates runner with varnishadm interface, varnish URL, workDir, logger
 - `SetTimeController()` - Sets time controller for scenario-based tests
-- `replaceBackendsInVCL()` - Replaces backends using AST parser (vclmod) with fallback to string replacement
+- `replaceBackendsInVCL()` - Replaces backends using AST parser (vclmod)
 - `LoadVCL()` - Loads VCL once with backend addresses replaced, stores for reuse
 - `UnloadVCL()` - Cleans up shared VCL
 - `RunTestWithSharedVCL()` - Executes test using pre-loaded shared VCL (preferred)
@@ -257,7 +257,7 @@ Orchestrates test execution and coordinates all components. Supports both single
 **Responsibilities:**
 
 - Coordinate all test components
-- Replace backend addresses in VCL using AST-based modification (with fallback)
+- Replace backend addresses in VCL using AST-based modification
 - Manage shared VCL lifecycle for performance
 - Execute scenario-based temporal tests with time advancement (Phase 2)
 - Collect VCL execution traces on test failure
@@ -412,7 +412,7 @@ WARNING: Backend 'legacy_backend' defined in VCL not used in test
 
 ## pkg/vcl
 
-VCL file loading and backend placeholder replacement (DEPRECATED for backend replacement - use pkg/vclmod).
+Utility functions for VCL testing.
 
 **Key types:**
 
@@ -420,18 +420,12 @@ VCL file loading and backend placeholder replacement (DEPRECATED for backend rep
 
 **Main operations:**
 
-- `LoadAndReplace()` - Loads VCL file and replaces backend placeholders
-- `ReplaceBackend()` - Replaces `__BACKEND_HOST__` and `__BACKEND_PORT__`
-- `ReplaceBackends()` - Replaces multiple named backend placeholders
 - `ParseAddress()` - Parses "host:port" string into components
 
 **Responsibilities:**
 
-- Read VCL files from disk
-- Replace test-time placeholders with actual mock backend address
-- Simple text-based replacement (no VCL parsing)
-- **DEPRECATED:** Backend replacement now uses pkg/vclmod with AST parsing
-- Kept as fallback for VCL files that fail to parse
+- Provide utility types and functions for VCL testing
+- Parse network addresses for backend configuration
 
 ## pkg/cache
 
