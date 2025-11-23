@@ -219,7 +219,8 @@ Orchestrates test execution and coordinates all components. Supports both single
 
 - `New()` - Creates runner with varnishadm interface, varnish URL, workDir, logger
 - `SetTimeController()` - Sets time controller for scenario-based tests
-- `LoadVCL()` - Loads VCL once with backend placeholders replaced, stores for reuse
+- `replaceBackendsInVCL()` - Replaces backends using AST parser (vclmod) with fallback to string replacement
+- `LoadVCL()` - Loads VCL once with backend addresses replaced, stores for reuse
 - `UnloadVCL()` - Cleans up shared VCL
 - `RunTestWithSharedVCL()` - Executes test using pre-loaded shared VCL (preferred)
 - `RunTest()` - Legacy method that loads VCL per test (for compatibility)
@@ -256,10 +257,12 @@ Orchestrates test execution and coordinates all components. Supports both single
 **Responsibilities:**
 
 - Coordinate all test components
+- Replace backend addresses in VCL using AST-based modification (with fallback)
 - Manage shared VCL lifecycle for performance
 - Execute scenario-based temporal tests with time advancement (Phase 2)
 - Collect VCL execution traces on test failure
 - Provide detailed error information with trace context
+- Validate backend names and log warnings for unused backends
 
 **Limitations:**
 
@@ -346,18 +349,80 @@ Validates test expectations against actual results. Supports cache-specific asse
 - Cache-aware assertions for temporal testing (Phase 2)
 - Simple, straightforward validation logic
 
-## pkg/vcl
+## pkg/vclmod
 
-VCL file loading and backend placeholder replacement.
+AST-based VCL backend modification using vclparser. Enables testing production VCL files without modification.
 
 **Key types:**
 
-- None (pure functions)
+- `BackendAddress` - Backend host and port configuration
+- `ValidationResult` - Contains warnings and errors from backend validation
+
+**Main operations:**
+
+- `ValidateBackends()` - Validates YAML backends exist in VCL, warns about unused VCL backends
+- `ModifyBackends()` - Parses VCL AST, replaces backend .host and .port, returns modified VCL
+- `findClosestMatch()` - Suggests similar backend names for typo detection
+
+**Backend Mapping:**
+
+- **YAML backends MUST have explicit names** matching VCL backend declarations
+- **YAML backend not in VCL** → FATAL ERROR (prevents typos)
+- **VCL backend not in YAML** → WARNING (may be unused in this test)
+- **Always overrides both .host and .port** in VCL (ignores original port)
+
+**Validation:**
+
+- Parses VCL using vclparser to extract backend declarations
+- Checks all YAML backends exist in VCL (with helpful suggestions for typos)
+- Warns about VCL backends not used in test (informational)
+- Returns detailed error messages with available backends listed
+
+**Modification:**
+
+- Parses VCL to AST using vclparser
+- Walks AST to find BackendDecl nodes
+- Modifies .host and .port properties (creates if missing)
+- Renders modified AST back to VCL preserving comments and structure
+- Backends not in YAML remain unchanged
+
+**Error Messages:**
+
+Example error:
+```
+FATAL: Backend 'api_server' defined in test YAML not found in VCL
+  VCL file: production.vcl
+  Available backends in VCL: [api, web, cache]
+  Did you mean 'api'?
+```
+
+Example warning:
+```
+WARNING: Backend 'legacy_backend' defined in VCL not used in test
+  This backend will not be overridden. Test may fail if VCL tries to use it.
+```
+
+**Responsibilities:**
+
+- Parse VCL files using vclparser for AST-based modification
+- Validate backend names match between YAML and VCL
+- Modify backend addresses while preserving VCL structure and comments
+- Provide clear error messages with suggestions for mismatched backends
+- Enable testing production VCL files with real hostnames
+
+## pkg/vcl
+
+VCL file loading and backend placeholder replacement (DEPRECATED for backend replacement - use pkg/vclmod).
+
+**Key types:**
+
+- `BackendAddress` - Backend host and port configuration
 
 **Main operations:**
 
 - `LoadAndReplace()` - Loads VCL file and replaces backend placeholders
 - `ReplaceBackend()` - Replaces `__BACKEND_HOST__` and `__BACKEND_PORT__`
+- `ReplaceBackends()` - Replaces multiple named backend placeholders
 - `ParseAddress()` - Parses "host:port" string into components
 
 **Responsibilities:**
@@ -365,6 +430,8 @@ VCL file loading and backend placeholder replacement.
 - Read VCL files from disk
 - Replace test-time placeholders with actual mock backend address
 - Simple text-based replacement (no VCL parsing)
+- **DEPRECATED:** Backend replacement now uses pkg/vclmod with AST parsing
+- Kept as fallback for VCL files that fail to parse
 
 ## pkg/cache
 

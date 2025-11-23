@@ -15,6 +15,7 @@ import (
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnishadm"
 	"github.com/perbu/vcltest/pkg/vcl"
+	"github.com/perbu/vcltest/pkg/vclmod"
 )
 
 var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -198,6 +199,52 @@ func (bm *backendManager) getTotalCallCount() int {
 	return total
 }
 
+// replaceBackendsInVCL performs backend replacement using AST-based modification (vclmod)
+// with fallback to string replacement (vcl) if parsing fails
+func (r *Runner) replaceBackendsInVCL(vclContent string, backends map[string]vcl.BackendAddress) (string, error) {
+	// Convert to vclmod.BackendAddress type
+	vclmodBackends := make(map[string]vclmod.BackendAddress)
+	for name, addr := range backends {
+		vclmodBackends[name] = vclmod.BackendAddress{
+			Host: addr.Host,
+			Port: addr.Port,
+		}
+	}
+
+	// Try AST-based modification first
+	validationResult, validationErr := vclmod.ValidateBackends(vclContent, vclmodBackends)
+	if validationErr == nil {
+		// Log warnings about unused backends
+		for _, warning := range validationResult.Warnings {
+			r.logger.Warn("Backend validation", "warning", warning)
+		}
+
+		// Perform AST-based modification
+		modifiedVCL, err := vclmod.ModifyBackends(vclContent, vclmodBackends)
+		if err == nil {
+			r.logger.Debug("VCL backends modified using AST-based parser")
+			return modifiedVCL, nil
+		}
+
+		// Log AST modification failure, will try fallback
+		r.logger.Warn("AST-based backend modification failed, falling back to string replacement",
+			"error", err)
+	} else {
+		// Log validation errors
+		if validationResult != nil {
+			for _, errMsg := range validationResult.Errors {
+				r.logger.Warn("Backend validation failed", "error", errMsg)
+			}
+		}
+		r.logger.Warn("Backend validation failed, falling back to string replacement",
+			"error", validationErr)
+	}
+
+	// Fallback to string replacement
+	r.logger.Debug("Using legacy string-based backend replacement (DEPRECATED)")
+	return vcl.ReplaceBackends(vclContent, backends)
+}
+
 // LoadVCL loads VCL file and prepares it for sharing across all tests
 func (r *Runner) LoadVCL(vclPath string, backends map[string]vcl.BackendAddress) error {
 	// Read VCL file
@@ -206,8 +253,8 @@ func (r *Runner) LoadVCL(vclPath string, backends map[string]vcl.BackendAddress)
 		return fmt.Errorf("reading VCL file: %w", err)
 	}
 
-	// Replace backend placeholders
-	modifiedVCL, err := vcl.ReplaceBackends(string(vclData), backends)
+	// Replace backend addresses using AST-based modification (with fallback)
+	modifiedVCL, err := r.replaceBackendsInVCL(string(vclData), backends)
 	if err != nil {
 		return fmt.Errorf("replacing backends in VCL: %w", err)
 	}
@@ -339,8 +386,8 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 		return nil, fmt.Errorf("reading VCL file: %w", err)
 	}
 
-	// Replace backend placeholders
-	modifiedVCL, err := vcl.ReplaceBackends(string(vclData), addresses)
+	// Replace backend addresses using AST-based modification (with fallback)
+	modifiedVCL, err := r.replaceBackendsInVCL(string(vclData), addresses)
 	if err != nil {
 		return nil, fmt.Errorf("replacing backends in VCL: %w", err)
 	}
@@ -550,8 +597,8 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 		return nil, fmt.Errorf("reading VCL file: %w", err)
 	}
 
-	// Replace backend placeholders
-	modifiedVCL, err := vcl.ReplaceBackends(string(vclData), addresses)
+	// Replace backend addresses using AST-based modification (with fallback)
+	modifiedVCL, err := r.replaceBackendsInVCL(string(vclData), addresses)
 	if err != nil {
 		return nil, fmt.Errorf("replacing backends in VCL: %w", err)
 	}

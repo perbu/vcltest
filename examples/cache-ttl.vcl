@@ -1,8 +1,8 @@
 vcl 4.1;
 
 backend default {
-    .host = "__BACKEND_HOST_DEFAULT__";
-    .port = "__BACKEND_PORT_DEFAULT__";
+    .host = "cache-backend.example.com";
+    .port = "80";
 }
 
 sub vcl_recv {
