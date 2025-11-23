@@ -3,6 +3,8 @@ github.com/borud/broker v1.0.2/go.mod h1:WCNKpeDbJrx/YmETK+y7ZLfQlM7MTDrbiJltq0O
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dghubble/trie v0.0.0-20201011220304-ed6d6b8add55 h1:3yKntgWb7KwnHd4nCVgCIUNQs4qRdua+jitRqGMxKys=
 github.com/dghubble/trie v0.0.0-20201011220304-ed6d6b8add55/go.mod h1:xNBeoT4V92/aNvuC3IJ2g59uxuKP4/kzvkpoHrb7v4A=
+github.com/perbu/vclparser v0.0.0-20251123095405-156e79641eb6 h1:t3y1diXuVWFAfyTK9bHTzkuRVjgIrmzZ0diDi1wsG1I=
+github.com/perbu/vclparser v0.0.0-20251123095405-156e79641eb6/go.mod h1:Ci44QhTNZoAFcPtr0ohFRIYBYEVELO5tY2jqFia88kM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=

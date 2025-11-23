@@ -249,12 +249,7 @@ This allows tests to work without hardcoding mock backend addresses.
 
 ## Examples
 
-See `examples/` directory:
-
-- `examples/basic.vcl` + `examples/basic.yaml` - Simple request routing
-- `examples/access-control.vcl` + `examples/access-control.yaml` - Header-based access control
-- `examples/error-demo.vcl` + `examples/error-demo.yaml` - Demonstrates error output
-- `examples/cache-ttl.vcl` + `examples/cache-ttl.yaml` - Cache TTL testing with time manipulation
+See [examples/README.md](examples/README.md) for a comprehensive guide to example tests, including basic routing, access control, cache TTL testing, multi-backend routing, and more.
 
 ## Architecture
 

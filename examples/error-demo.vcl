@@ -1,8 +1,8 @@
 vcl 4.1;
 
 backend default {
-    .host = "__BACKEND_HOST__";
-    .port = "__BACKEND_PORT__";
+    .host = "api.example.com";
+    .port = "443";
 }
 
 sub vcl_recv {

@@ -1,13 +1,13 @@
 vcl 4.1;
 
 backend api_backend {
-    .host = "__BACKEND_HOST_API_BACKEND__";
-    .port = "__BACKEND_PORT_API_BACKEND__";
+    .host = "api.production.example.com";
+    .port = "443";
 }
 
 backend web_backend {
-    .host = "__BACKEND_HOST_WEB_BACKEND__";
-    .port = "__BACKEND_PORT_WEB_BACKEND__";
+    .host = "web.production.example.com";
+    .port = "443";
 }
 
 sub vcl_recv {

@@ -3,8 +3,8 @@ vcl 4.1;
 include "included.vcl";
 
 backend default {
-    .host = "127.0.0.1";
-    .port = "8080";
+    .host = "include-test.example.com";
+    .port = "80";
 }
 
 sub vcl_recv {
