@@ -35,7 +35,7 @@ Options:
 
 ## Quick Start
 
-**hello.vcl:**
+**basic.vcl:**
 
 ```vcl
 vcl 4.1;
@@ -46,39 +46,33 @@ backend default {
 }
 
 sub vcl_recv {
-    if (req.url == "/hello") {
+    if (req.url == "/health") {
         return (synth(200, "OK"));
     }
+    return (pass);
 }
 
-sub vcl_synth {
-    set resp.body = "Hello, VCL!";
+sub vcl_deliver {
+    set resp.http.X-VCL-Version = "4.1";
     return (deliver);
 }
 ```
 
-**hello.yaml:**
+**basic.yaml:**
 
 ```yaml
-name: Hello endpoint returns 200
-
-backends:
-  default:
-    status: 200
-    body: "backend response"
-
+name: Health check endpoint
 request:
-  url: /hello
-
+  url: /health
 expect:
   status: 200
-  body_contains: "Hello"
+  body_contains: "OK"
 ```
 
 **Run:**
 
 ```bash
-./vcltest hello.yaml
+./vcltest examples/basic.yaml
 ```
 
 ## Test Format
@@ -107,14 +101,15 @@ expect:
   headers:                 # Optional
     X-Header: expected
   body_contains: "text"    # Optional
-  cached: true             # Optional
-  age_lt: 60               # Optional
-  age_gt: 10               # Optional
+  backend_used: "default"  # Optional, verifies which backend was used
+  cached: true             # Optional, cache hit detection
+  age_lt: 60               # Optional, Age header < N seconds
+  age_gt: 10               # Optional, Age header > N seconds
 ```
 
-### Cache TTL Tests
+### Scenario Tests
 
-Test time-dependent behavior with dynamic backend configuration:
+Scenario tests execute multiple steps with time advancement. Use `scenario:` instead of top-level `backends:`.
 
 ```yaml
 name: Cache TTL test
@@ -124,7 +119,7 @@ scenario:
   - at: "0s"
     request:
       url: /article
-    backend:                    # Backend config for this step
+    backend:                    # Per-step backend config (singular)
       status: 200
       headers:
         Cache-Control: "max-age=60"
@@ -138,24 +133,19 @@ scenario:
       url: /article
     expect:
       cached: true
+      age_lt: 35
 
-  # Step 3: Request at 70s - cache expired, new backend fetch
+  # Step 3: Request at 70s - cache expired
   - at: "70s"
     request:
       url: /article
-    backend:                    # Backend can return different content/headers
-      status: 200
-      headers:
-        Cache-Control: "max-age=120"
-      body: "Updated content"
     expect:
       cached: false
 ```
 
-**Key features:**
+**Notes:**
 - Time offsets are absolute from test start
-- Backend configuration can be specified per-step for dynamic responses
-- Backends are reconfigured on-the-fly without restarting
+- Use `backend:` (singular) per step, not top-level `backends:` (plural)
 - Requires libfaketime for time manipulation
 
 ### Multiple Tests
