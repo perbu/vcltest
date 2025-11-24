@@ -215,6 +215,22 @@ func (bm *backendManager) getTotalCallCount() int {
 	return total
 }
 
+// getCallCounts returns a map of backend name -> call count
+func (bm *backendManager) getCallCounts() map[string]int {
+	counts := make(map[string]int)
+	for name, backend := range bm.backends {
+		counts[name] = backend.GetCallCount()
+	}
+	return counts
+}
+
+// resetCallCounts resets all backend call counters to zero
+func (bm *backendManager) resetCallCounts() {
+	for _, backend := range bm.backends {
+		backend.ResetCallCount()
+	}
+}
+
 // replaceBackendsInVCL performs backend replacement using AST-based modification
 func (r *Runner) replaceBackendsInVCL(vclContent string, vclPath string, backends map[string]vcl.BackendAddress) (string, error) {
 	// Convert to vclmod.BackendAddress type
@@ -590,19 +606,11 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 		r.logger.Debug("Varnishlog flushed", "duration_ms", time.Since(flushStart).Milliseconds())
 	}
 
-	// Get backends used from varnishlog (for backend_used assertion)
-	var backendsUsed []string
-	if r.recorder != nil && test.Expectations.Backend != nil && test.Expectations.Backend.Used != "" {
-		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
-		if err != nil {
-			r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
-		} else {
-			backendsUsed = recorder.GetBackendsUsed(messages)
-		}
-	}
+	// Collect backend call counts
+	backendCalls := bm.getCallCounts()
 
 	// Check assertions
-	assertResult := assertion.Check(test.Expectations, response, bm.getTotalCallCount(), backendsUsed)
+	assertResult := assertion.Check(test.Expectations, response, backendCalls)
 
 	// Prepare test result
 	result := &TestResult{
@@ -650,6 +658,13 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 
 // runSingleRequestTestWithSharedVCL executes a single-request test with pre-loaded VCL
 func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*TestResult, error) {
+	// Reset backend call counts before test
+	if r.mockBackends != nil {
+		for _, backend := range r.mockBackends {
+			backend.ResetCallCount()
+		}
+	}
+
 	// Mark current log position before making request
 	var logOffset int64
 	var err error
@@ -677,20 +692,16 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 		r.logger.Debug("Varnishlog flushed", "duration_ms", time.Since(flushStart).Milliseconds())
 	}
 
-	// Get backends used from varnishlog (for backend_used assertion)
-	var backendsUsed []string
-	if r.recorder != nil && test.Expectations.Backend != nil && test.Expectations.Backend.Used != "" {
-		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
-		if err != nil {
-			r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
-		} else {
-			backendsUsed = recorder.GetBackendsUsed(messages)
+	// Collect backend call counts
+	backendCalls := make(map[string]int)
+	if r.mockBackends != nil {
+		for name, backend := range r.mockBackends {
+			backendCalls[name] = backend.GetCallCount()
 		}
 	}
 
-	// Note: backend call count is not tracked in shared VCL mode (would accumulate across tests)
-	// Users should avoid backend_calls assertions when using shared VCL
-	assertResult := assertion.Check(test.Expectations, response, 0, backendsUsed)
+	// Check assertions
+	assertResult := assertion.Check(test.Expectations, response, backendCalls)
 
 	// Prepare test result
 	result := &TestResult{
@@ -828,15 +839,6 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 
 		r.logger.Debug("Executing scenario step", "step", stepIdx+1, "at", step.At)
 
-		// Mark current log position before making request
-		var stepLogOffset int64
-		if r.recorder != nil {
-			stepLogOffset, err = r.recorder.MarkPosition()
-			if err != nil {
-				r.logger.Warn("Failed to mark log position", "error", err)
-			}
-		}
-
 		// Make HTTP request to Varnish
 		response, err := client.MakeRequest(r.varnishURL, step.Request)
 		if err != nil {
@@ -850,19 +852,11 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 			}
 		}
 
-		// Get backends used from varnishlog (for backend_used assertion)
-		var backendsUsed []string
-		if r.recorder != nil && step.Expectations.Backend != nil && step.Expectations.Backend.Used != "" {
-			messages, err := r.recorder.GetVCLMessagesSince(stepLogOffset)
-			if err != nil {
-				r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
-			} else {
-				backendsUsed = recorder.GetBackendsUsed(messages)
-			}
-		}
+		// Collect backend call counts for this step
+		backendCalls := bm.getCallCounts()
 
 		// Check assertions for this step
-		assertResult := assertion.Check(step.Expectations, response, bm.getTotalCallCount(), backendsUsed)
+		assertResult := assertion.Check(step.Expectations, response, backendCalls)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {
@@ -975,12 +969,10 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 
 		r.logger.Debug("Executing scenario step", "step", stepIdx+1, "at", step.At)
 
-		// Mark current log position before making request
-		var stepLogOffset int64
-		if r.recorder != nil {
-			stepLogOffset, err = r.recorder.MarkPosition()
-			if err != nil {
-				r.logger.Warn("Failed to mark log position", "error", err)
+		// Reset backend call counts before step
+		if r.mockBackends != nil {
+			for _, backend := range r.mockBackends {
+				backend.ResetCallCount()
 			}
 		}
 
@@ -997,19 +989,16 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 			}
 		}
 
-		// Get backends used from varnishlog (for backend_used assertion)
-		var backendsUsed []string
-		if r.recorder != nil && step.Expectations.Backend != nil && step.Expectations.Backend.Used != "" {
-			messages, err := r.recorder.GetVCLMessagesSince(stepLogOffset)
-			if err != nil {
-				r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
-			} else {
-				backendsUsed = recorder.GetBackendsUsed(messages)
+		// Collect backend call counts
+		backendCalls := make(map[string]int)
+		if r.mockBackends != nil {
+			for name, backend := range r.mockBackends {
+				backendCalls[name] = backend.GetCallCount()
 			}
 		}
 
-		// Note: backend call count is not tracked in shared VCL mode
-		assertResult := assertion.Check(step.Expectations, response, 0, backendsUsed)
+		// Check assertions for this step
+		assertResult := assertion.Check(step.Expectations, response, backendCalls)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {

@@ -48,9 +48,40 @@ type ResponseExpectations struct {
 }
 
 // BackendExpectations validates backend interaction
+// Supports multiple formats:
+// 1. Simple string: backend: "api_server"
+// 2. Object with used/calls: backend: {used: "api_server", calls: 2}
+// 3. Per-backend map: backends: {api_server: {calls: 1}}
 type BackendExpectations struct {
+	// Simple format (populated by UnmarshalYAML when value is a string)
+	Name string `yaml:"-"` // Not directly in YAML, set by custom unmarshaler
+
+	// Object format
 	Calls *int   `yaml:"calls,omitempty"`
 	Used  string `yaml:"used,omitempty"`
+
+	// Per-backend map format
+	PerBackend map[string]BackendCallExpectation `yaml:"backends,omitempty"`
+}
+
+// BackendCallExpectation defines expected calls for a specific backend
+type BackendCallExpectation struct {
+	Calls int `yaml:"calls"`
+}
+
+// UnmarshalYAML implements custom unmarshaling to support simple string format
+func (b *BackendExpectations) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try to unmarshal as a string first (simple format)
+	var simple string
+	if err := unmarshal(&simple); err == nil {
+		b.Name = simple
+		return nil
+	}
+
+	// If that fails, unmarshal as an object
+	type rawBackendExpectations BackendExpectations
+	raw := (*rawBackendExpectations)(b)
+	return unmarshal(raw)
 }
 
 // CacheExpectations validates cache-specific behavior

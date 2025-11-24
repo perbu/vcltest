@@ -1,0 +1,78 @@
+---
+# Example 1: Simple string format - just assert which backend was used
+name: "Simple backend routing"
+request:
+  url: /api/users
+backends:
+  api_server:
+    status: 200
+    body: '{"users": []}'
+  web_server:
+    status: 200
+    body: '<html>Hello</html>'
+expectations:
+  response:
+    status: 200
+  backend: api_server  # Simple format: assert api_server was called
+
+---
+# Example 2: Object format with "used" - assert specific backend
+name: "Backend used with count"
+request:
+  url: /api/data
+backends:
+  api_server:
+    status: 200
+    body: '{"data": "value"}'
+  web_server:
+    status: 200
+expectations:
+  response:
+    status: 200
+  backend:
+    used: api_server
+    calls: 1  # Total calls across all backends
+
+---
+# Example 3: Cache hit - zero backend calls
+name: "Cached response"
+request:
+  url: /cached-page
+backends:
+  web_server:
+    status: 200
+    body: "Cached content"
+expectations:
+  response:
+    status: 200
+  cache:
+    hit: true
+  backend:
+    calls: 0  # No backends should be called (served from cache)
+
+---
+# Example 4: Per-backend call counts (advanced)
+name: "Multi-backend with specific counts"
+request:
+  url: /esi-page
+backends:
+  api_server:
+    status: 200
+    body: '{"data": "value"}'
+  web_server:
+    status: 200
+    body: '<html>Content</html>'
+  cdn:
+    status: 200
+    body: "Image data"
+expectations:
+  response:
+    status: 200
+  backend:
+    backends:
+      api_server:
+        calls: 1
+      web_server:
+        calls: 1
+      cdn:
+        calls: 0  # Should not hit CDN in this test

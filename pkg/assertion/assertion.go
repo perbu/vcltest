@@ -16,16 +16,11 @@ type Result struct {
 }
 
 // Check verifies all expectations against actual results
-// backendsUsed is optional - only needed if backend.used assertion is specified
-func Check(expectations testspec.ExpectationsSpec, response *client.Response, backendCalls int, backendsUsed ...[]string) *Result {
+// backendCalls is a map of backend name -> call count
+func Check(expectations testspec.ExpectationsSpec, response *client.Response, backendCalls map[string]int) *Result {
 	result := &Result{
 		Passed: true,
 		Errors: []string{},
-	}
-
-	var backends []string
-	if len(backendsUsed) > 0 {
-		backends = backendsUsed[0]
 	}
 
 	// Response expectations (required)
@@ -33,7 +28,7 @@ func Check(expectations testspec.ExpectationsSpec, response *client.Response, ba
 
 	// Backend expectations (optional)
 	if expectations.Backend != nil {
-		checkBackendExpectations(expectations.Backend, backendCalls, backends, result)
+		checkBackendExpectations(expectations.Backend, backendCalls, result)
 	}
 
 	// Cache expectations (optional)
@@ -69,32 +64,50 @@ func checkResponseExpectations(exp *testspec.ResponseExpectations, response *cli
 	}
 }
 
-func checkBackendExpectations(exp *testspec.BackendExpectations, backendCalls int, backendsUsed []string, result *Result) {
-	if exp.Calls != nil {
-		if backendCalls != *exp.Calls {
+func checkBackendExpectations(exp *testspec.BackendExpectations, backendCalls map[string]int, result *Result) {
+	// Format 1: Simple string (backend: "api_server")
+	// Asserts that this backend was called at least once
+	if exp.Name != "" {
+		calls, found := backendCalls[exp.Name]
+		if !found || calls == 0 {
 			result.Passed = false
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Backend calls: expected %d, got %d", *exp.Calls, backendCalls))
+				fmt.Sprintf("Backend %q: expected to be called, but was not", exp.Name))
+		}
+		return
+	}
+
+	// Format 2: Object with Used and/or Calls
+	if exp.Used != "" {
+		calls, found := backendCalls[exp.Used]
+		if !found || calls == 0 {
+			result.Passed = false
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("Backend %q: expected to be called, but was not", exp.Used))
 		}
 	}
 
-	if exp.Used != "" {
-		found := false
-		for _, backend := range backendsUsed {
-			if backend == exp.Used {
-				found = true
-				break
-			}
+	// Check total call count across all backends
+	if exp.Calls != nil {
+		totalCalls := 0
+		for _, count := range backendCalls {
+			totalCalls += count
 		}
-		if !found {
-			if len(backendsUsed) == 0 {
+		if totalCalls != *exp.Calls {
+			result.Passed = false
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("Backend calls: expected %d total, got %d", *exp.Calls, totalCalls))
+		}
+	}
+
+	// Format 3: Per-backend call counts (backends: {api_server: {calls: 1}})
+	if len(exp.PerBackend) > 0 {
+		for backendName, expectation := range exp.PerBackend {
+			actualCalls := backendCalls[backendName]
+			if actualCalls != expectation.Calls {
 				result.Passed = false
 				result.Errors = append(result.Errors,
-					fmt.Sprintf("Backend used: expected %q, but no backend was called", exp.Used))
-			} else {
-				result.Passed = false
-				result.Errors = append(result.Errors,
-					fmt.Sprintf("Backend used: expected %q, got %v", exp.Used, backendsUsed))
+					fmt.Sprintf("Backend %q calls: expected %d, got %d", backendName, expectation.Calls, actualCalls))
 			}
 		}
 	}

@@ -91,6 +91,12 @@ func (m *MockBackend) GetCallCount() int {
 	return int(m.callCount.Load())
 }
 
+// ResetCallCount resets the call counter to zero
+// This is useful for resetting state between tests in shared VCL mode
+func (m *MockBackend) ResetCallCount() {
+	m.callCount.Store(0)
+}
+
 // UpdateConfig atomically updates the backend response configuration
 // This allows changing the backend's behavior without restarting it
 func (m *MockBackend) UpdateConfig(newConfig Config) {
