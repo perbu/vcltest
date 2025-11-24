@@ -8,8 +8,9 @@ backend:
   status: 200
   body: "backend response"
 
-expect:
-  status: 403
+expectations:
+  response:
+    status: 403
 
 ---
 name: Request with header is allowed
@@ -23,6 +24,7 @@ backend:
   status: 200
   body: "backend response"
 
-expect:
-  status: 200
-  body_contains: "backend response"
+expectations:
+  response:
+    status: 200
+    body_contains: "backend response"

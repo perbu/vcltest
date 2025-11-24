@@ -76,8 +76,8 @@ func validate(test *TestSpec) error {
 
 	// Validate single-request test
 	if isSingleRequest {
-		if test.Expect.Status == 0 {
-			return fmt.Errorf("expect.status is required")
+		if test.Expectations.Response.Status == 0 {
+			return fmt.Errorf("expectations.response.status is required")
 		}
 	}
 
@@ -93,8 +93,8 @@ func validate(test *TestSpec) error {
 			if step.Request.URL == "" {
 				return fmt.Errorf("scenario step %d: request.url is required", i+1)
 			}
-			if step.Expect.Status == 0 {
-				return fmt.Errorf("scenario step %d: expect.status is required", i+1)
+			if step.Expectations.Response.Status == 0 {
+				return fmt.Errorf("scenario step %d: expectations.response.status is required", i+1)
 			}
 		}
 	}

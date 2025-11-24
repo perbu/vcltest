@@ -1,29 +1,32 @@
 name: Health check endpoint
 request:
   url: /health
-expect:
-  status: 200
-  headers:
-    X-VCL-Version: "4.1"
-  body_contains: "OK"
+expectations:
+  response:
+    status: 200
+    headers:
+      X-VCL-Version: "4.1"
+    body_contains: "OK"
 
 ---
 
 name: Backend pass-through
 request:
   url: /api/test
-expect:
-  status: 200
-  headers:
-    X-Backend: "hit"
-    X-VCL-Version: "4.1"
+expectations:
+  response:
+    status: 200
+    headers:
+      X-Backend: "hit"
+      X-VCL-Version: "4.1"
 
 ---
 
 name: Redirect handling
 request:
   url: /redirect
-expect:
-  status: 301
-  headers:
-    Location: "/new-location"
+expectations:
+  response:
+    status: 301
+    headers:
+      Location: "/new-location"

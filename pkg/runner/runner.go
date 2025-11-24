@@ -592,7 +592,7 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 
 	// Get backends used from varnishlog (for backend_used assertion)
 	var backendsUsed []string
-	if r.recorder != nil && test.Expect.BackendUsed != "" {
+	if r.recorder != nil && test.Expectations.Backend != nil && test.Expectations.Backend.Used != "" {
 		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
@@ -602,7 +602,7 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 	}
 
 	// Check assertions
-	assertResult := assertion.Check(test.Expect, response, bm.getTotalCallCount(), backendsUsed)
+	assertResult := assertion.Check(test.Expectations, response, bm.getTotalCallCount(), backendsUsed)
 
 	// Prepare test result
 	result := &TestResult{
@@ -679,7 +679,7 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 
 	// Get backends used from varnishlog (for backend_used assertion)
 	var backendsUsed []string
-	if r.recorder != nil && test.Expect.BackendUsed != "" {
+	if r.recorder != nil && test.Expectations.Backend != nil && test.Expectations.Backend.Used != "" {
 		messages, err := r.recorder.GetVCLMessagesSince(logOffset)
 		if err != nil {
 			r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
@@ -690,7 +690,7 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 
 	// Note: backend call count is not tracked in shared VCL mode (would accumulate across tests)
 	// Users should avoid backend_calls assertions when using shared VCL
-	assertResult := assertion.Check(test.Expect, response, 0, backendsUsed)
+	assertResult := assertion.Check(test.Expectations, response, 0, backendsUsed)
 
 	// Prepare test result
 	result := &TestResult{
@@ -852,7 +852,7 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 
 		// Get backends used from varnishlog (for backend_used assertion)
 		var backendsUsed []string
-		if r.recorder != nil && step.Expect.BackendUsed != "" {
+		if r.recorder != nil && step.Expectations.Backend != nil && step.Expectations.Backend.Used != "" {
 			messages, err := r.recorder.GetVCLMessagesSince(stepLogOffset)
 			if err != nil {
 				r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
@@ -862,7 +862,7 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 		}
 
 		// Check assertions for this step
-		assertResult := assertion.Check(step.Expect, response, bm.getTotalCallCount(), backendsUsed)
+		assertResult := assertion.Check(step.Expectations, response, bm.getTotalCallCount(), backendsUsed)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {
@@ -999,7 +999,7 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 
 		// Get backends used from varnishlog (for backend_used assertion)
 		var backendsUsed []string
-		if r.recorder != nil && step.Expect.BackendUsed != "" {
+		if r.recorder != nil && step.Expectations.Backend != nil && step.Expectations.Backend.Used != "" {
 			messages, err := r.recorder.GetVCLMessagesSince(stepLogOffset)
 			if err != nil {
 				r.logger.Warn("Failed to get VCL messages for backend check", "error", err)
@@ -1009,7 +1009,7 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 		}
 
 		// Note: backend call count is not tracked in shared VCL mode
-		assertResult := assertion.Check(step.Expect, response, 0, backendsUsed)
+		assertResult := assertion.Check(step.Expectations, response, 0, backendsUsed)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {

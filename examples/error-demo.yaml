@@ -8,5 +8,6 @@ backend:
   status: 200
   body: '{"users": []}'
 
-expect:
-  status: 404  # This is WRONG - we'll actually get 200
+expectations:
+  response:
+    status: 404  # This is WRONG - we'll actually get 200

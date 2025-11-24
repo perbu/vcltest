@@ -69,9 +69,10 @@ sub vcl_deliver {
 name: Health check endpoint
 request:
   url: /health
-expect:
-  status: 200
-  body_contains: "OK"
+expectations:
+  response:
+    status: 200
+    body_contains: "OK"
 ```
 
 **Run:**
@@ -101,15 +102,18 @@ request:
     X-Custom: value
   body: "request body"     # Optional
 
-expect:
-  status: 200              # Required
-  headers:                 # Optional
-    X-Header: expected
-  body_contains: "text"    # Optional
-  backend_used: "default"  # Optional, verifies which backend was used
-  cached: true             # Optional, cache hit detection
-  age_lt: 60               # Optional, Age header < N seconds
-  age_gt: 10               # Optional, Age header > N seconds
+expectations:
+  response:
+    status: 200            # Required
+    headers:               # Optional
+      X-Header: expected
+    body_contains: "text"  # Optional
+  backend:                 # Optional
+    used: "default"        # Verifies which backend was used
+  cache:                   # Optional
+    hit: true              # Cache hit detection
+    age_lt: 60             # Age header < N seconds
+    age_gt: 10             # Age header > N seconds
 ```
 
 ### Scenario Tests
@@ -129,23 +133,32 @@ scenario:
       headers:
         Cache-Control: "max-age=60"
       body: "Article content"
-    expect:
-      cached: false
+    expectations:
+      response:
+        status: 200
+      cache:
+        hit: false
 
   # Step 2: Request at 30s - cache hit
   - at: "30s"
     request:
       url: /article
-    expect:
-      cached: true
-      age_lt: 35
+    expectations:
+      response:
+        status: 200
+      cache:
+        hit: true
+        age_lt: 35
 
   # Step 3: Request at 70s - cache expired
   - at: "70s"
     request:
       url: /article
-    expect:
-      cached: false
+    expectations:
+      response:
+        status: 200
+      cache:
+        hit: false
 ```
 
 **Notes:**
@@ -167,8 +180,9 @@ backends:
 request:
   url: /path1
 
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 ---
 name: Test 2
 
@@ -179,8 +193,9 @@ backends:
 request:
   url: /path2
 
-expect:
-  status: 404
+expectations:
+  response:
+    status: 404
 ```
 
 ## When Tests Fail

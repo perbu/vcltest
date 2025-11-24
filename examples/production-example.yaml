@@ -31,31 +31,37 @@ scenario:
   - at: "0s"
     request:
       url: /api/users
-    expect:
-      status: 200
-      backend_used: "api_production"
-      headers:
-        X-Backend-Used: "api_production"
-        X-Service: "API"
+    expectations:
+      response:
+        status: 200
+        headers:
+          X-Backend-Used: "api_production"
+          X-Service: "API"
+      backend:
+        used: "api_production"
 
   # Test web request routes to web_production
   - at: "1s"
     request:
       url: /index.html
-    expect:
-      status: 200
-      backend_used: "web_production"
-      headers:
-        X-Backend-Used: "web_production"
-        X-Service: "Web"
+    expectations:
+      response:
+        status: 200
+        headers:
+          X-Backend-Used: "web_production"
+          X-Service: "Web"
+      backend:
+        used: "web_production"
 
   # Test legacy request routes to legacy_service
   - at: "2s"
     request:
       url: /legacy/old-api
-    expect:
-      status: 200
-      backend_used: "legacy_service"
-      headers:
-        X-Backend-Used: "legacy_service"
-        X-Service: "Legacy"
+    expectations:
+      response:
+        status: 200
+        headers:
+          X-Backend-Used: "legacy_service"
+          X-Service: "Legacy"
+      backend:
+        used: "legacy_service"

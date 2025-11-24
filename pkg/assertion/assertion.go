@@ -16,88 +16,101 @@ type Result struct {
 }
 
 // Check verifies all expectations against actual results
-// backendsUsed is optional - only needed if backend_used assertion is specified
-func Check(expect testspec.ExpectSpec, response *client.Response, backendCalls int, backendsUsed ...[]string) *Result {
+// backendsUsed is optional - only needed if backend.used assertion is specified
+func Check(expectations testspec.ExpectationsSpec, response *client.Response, backendCalls int, backendsUsed ...[]string) *Result {
 	result := &Result{
 		Passed: true,
 		Errors: []string{},
 	}
 
-	// Extract backends used list (optional)
 	var backends []string
 	if len(backendsUsed) > 0 {
 		backends = backendsUsed[0]
 	}
 
-	// Check status code
-	if response.Status != expect.Status {
-		result.Passed = false
-		result.Errors = append(result.Errors,
-			fmt.Sprintf("Status code: expected %d, got %d", expect.Status, response.Status))
+	// Response expectations (required)
+	checkResponseExpectations(&expectations.Response, response, result)
+
+	// Backend expectations (optional)
+	if expectations.Backend != nil {
+		checkBackendExpectations(expectations.Backend, backendCalls, backends, result)
 	}
 
-	// Check backend calls (if specified)
-	if expect.BackendCalls != nil {
-		if backendCalls != *expect.BackendCalls {
+	// Cache expectations (optional)
+	if expectations.Cache != nil {
+		checkCacheExpectations(expectations.Cache, response, result)
+	}
+
+	return result
+}
+
+func checkResponseExpectations(exp *testspec.ResponseExpectations, response *client.Response, result *Result) {
+	if response.Status != exp.Status {
+		result.Passed = false
+		result.Errors = append(result.Errors,
+			fmt.Sprintf("Response status: expected %d, got %d", exp.Status, response.Status))
+	}
+
+	for key, expectedValue := range exp.Headers {
+		actualValue := response.Headers.Get(key)
+		if actualValue != expectedValue {
 			result.Passed = false
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Backend calls: expected %d, got %d", *expect.BackendCalls, backendCalls))
+				fmt.Sprintf("Response header %q: expected %q, got %q", key, expectedValue, actualValue))
 		}
 	}
 
-	// Check backend used (if specified)
-	if expect.BackendUsed != "" {
+	if exp.BodyContains != "" {
+		if !strings.Contains(response.Body, exp.BodyContains) {
+			result.Passed = false
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("Response body should contain %q, but doesn't", exp.BodyContains))
+		}
+	}
+}
+
+func checkBackendExpectations(exp *testspec.BackendExpectations, backendCalls int, backendsUsed []string, result *Result) {
+	if exp.Calls != nil {
+		if backendCalls != *exp.Calls {
+			result.Passed = false
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("Backend calls: expected %d, got %d", *exp.Calls, backendCalls))
+		}
+	}
+
+	if exp.Used != "" {
 		found := false
-		for _, backend := range backends {
-			if backend == expect.BackendUsed {
+		for _, backend := range backendsUsed {
+			if backend == exp.Used {
 				found = true
 				break
 			}
 		}
 		if !found {
-			if len(backends) == 0 {
+			if len(backendsUsed) == 0 {
 				result.Passed = false
 				result.Errors = append(result.Errors,
-					fmt.Sprintf("Backend used: expected %q, but no backend was called", expect.BackendUsed))
+					fmt.Sprintf("Backend used: expected %q, but no backend was called", exp.Used))
 			} else {
 				result.Passed = false
 				result.Errors = append(result.Errors,
-					fmt.Sprintf("Backend used: expected %q, got %v", expect.BackendUsed, backends))
+					fmt.Sprintf("Backend used: expected %q, got %v", exp.Used, backendsUsed))
 			}
 		}
 	}
+}
 
-	// Check headers (if specified)
-	for key, expectedValue := range expect.Headers {
-		actualValue := response.Headers.Get(key)
-		if actualValue != expectedValue {
-			result.Passed = false
-			result.Errors = append(result.Errors,
-				fmt.Sprintf("Header %q: expected %q, got %q", key, expectedValue, actualValue))
-		}
-	}
-
-	// Check body contains (if specified)
-	if expect.BodyContains != "" {
-		if !strings.Contains(response.Body, expect.BodyContains) {
-			result.Passed = false
-			result.Errors = append(result.Errors,
-				fmt.Sprintf("Body should contain %q, but doesn't", expect.BodyContains))
-		}
-	}
-
-	// Check cached status (if specified)
-	if expect.Cached != nil {
+func checkCacheExpectations(exp *testspec.CacheExpectations, response *client.Response, result *Result) {
+	if exp.Hit != nil {
 		isCached := checkIfCached(response)
-		if isCached != *expect.Cached {
+		if isCached != *exp.Hit {
 			result.Passed = false
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Cached: expected %v, got %v", *expect.Cached, isCached))
+				fmt.Sprintf("Cache hit: expected %v, got %v", *exp.Hit, isCached))
 		}
 	}
 
-	// Check Age header constraints (if specified)
-	if expect.AgeGt != nil || expect.AgeLt != nil {
+	if exp.AgeGt != nil || exp.AgeLt != nil {
 		ageStr := response.Headers.Get("Age")
 		if ageStr == "" {
 			result.Passed = false
@@ -109,39 +122,32 @@ func Check(expect testspec.ExpectSpec, response *client.Response, backendCalls i
 				result.Errors = append(result.Errors,
 					fmt.Sprintf("Age header is not a valid number: %q", ageStr))
 			} else {
-				// Check age_gt
-				if expect.AgeGt != nil {
-					if age <= *expect.AgeGt {
+				if exp.AgeGt != nil {
+					if age <= *exp.AgeGt {
 						result.Passed = false
 						result.Errors = append(result.Errors,
-							fmt.Sprintf("Age: expected > %d, got %d", *expect.AgeGt, age))
+							fmt.Sprintf("Age: expected > %d, got %d", *exp.AgeGt, age))
 					}
 				}
-				// Check age_lt
-				if expect.AgeLt != nil {
-					if age >= *expect.AgeLt {
+				if exp.AgeLt != nil {
+					if age >= *exp.AgeLt {
 						result.Passed = false
 						result.Errors = append(result.Errors,
-							fmt.Sprintf("Age: expected < %d, got %d", *expect.AgeLt, age))
+							fmt.Sprintf("Age: expected < %d, got %d", *exp.AgeLt, age))
 					}
 				}
 			}
 		}
 	}
 
-	// Check stale status (if specified)
-	// A response is considered stale if X-Varnish-Stale header is present
-	// or if Warning header contains "110" (Response is Stale)
-	if expect.Stale != nil {
+	if exp.Stale != nil {
 		isStale := checkIfStale(response)
-		if isStale != *expect.Stale {
+		if isStale != *exp.Stale {
 			result.Passed = false
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Stale: expected %v, got %v", *expect.Stale, isStale))
+				fmt.Sprintf("Stale: expected %v, got %v", *exp.Stale, isStale))
 		}
 	}
-
-	return result
 }
 
 // checkIfCached determines if a response was served from cache

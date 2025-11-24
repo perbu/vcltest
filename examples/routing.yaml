@@ -20,27 +20,33 @@ scenario:
   - at: "0s"
     request:
       url: /api/users
-    expect:
-      status: 200
-      backend_used: "api_backend"
-      headers:
-        X-Backend: "api"
+    expectations:
+      response:
+        status: 200
+        headers:
+          X-Backend: "api"
+      backend:
+        used: "api_backend"
 
   # Test web request goes to web_backend
   - at: "1s"
     request:
       url: /index.html
-    expect:
-      status: 200
-      backend_used: "web_backend"
-      headers:
-        X-Backend: "web"
+    expectations:
+      response:
+        status: 200
+        headers:
+          X-Backend: "web"
+      backend:
+        used: "web_backend"
 
   # Test another API path
   - at: "2s"
     request:
       url: /api/products/123
-    expect:
-      status: 200
-      backend_used: "api_backend"
-      body_contains: "api"
+    expectations:
+      response:
+        status: 200
+        body_contains: "api"
+      backend:
+        used: "api_backend"

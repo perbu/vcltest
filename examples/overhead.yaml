@@ -6,8 +6,9 @@ request:
 backend:
   status: 200
   body: "response1"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_02"
@@ -17,8 +18,9 @@ request:
 backend:
   status: 200
   body: "response2"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_03"
@@ -28,8 +30,9 @@ request:
 backend:
   status: 200
   body: "response3"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_04"
@@ -39,8 +42,9 @@ request:
 backend:
   status: 200
   body: "response4"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_05"
@@ -50,8 +54,9 @@ request:
 backend:
   status: 200
   body: "response5"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_06"
@@ -61,8 +66,9 @@ request:
 backend:
   status: 200
   body: "response6"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_07"
@@ -72,8 +78,9 @@ request:
 backend:
   status: 200
   body: "response7"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_08"
@@ -83,8 +90,9 @@ request:
 backend:
   status: 200
   body: "response8"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_09"
@@ -94,8 +102,9 @@ request:
 backend:
   status: 200
   body: "response9"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200
 
 ---
 name: "overhead_10"
@@ -105,5 +114,6 @@ request:
 backend:
   status: 200
   body: "response10"
-expect:
-  status: 200
+expectations:
+  response:
+    status: 200

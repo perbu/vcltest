@@ -174,11 +174,14 @@ Parses YAML test specification files. Supports both single-request and scenario-
 
 **Key types:**
 
-- `TestSpec` - Complete test specification (name, request/backend/expect OR scenario) - VCL is resolved separately
-- `ScenarioStep` - Single step in temporal test scenario (at, request, backend, expect)
+- `TestSpec` - Complete test specification (name, request/backend/expectations OR scenario) - VCL is resolved separately
+- `ScenarioStep` - Single step in temporal test scenario (at, request, backend, expectations)
 - `RequestSpec` - HTTP request definition (method, URL, headers, body)
 - `BackendSpec` - Mock backend response (status, headers, body)
-- `ExpectSpec` - Test assertions (status, backend_calls, headers, body_contains, cached, age_lt, age_gt, stale)
+- `ExpectationsSpec` - Nested test expectations structure containing:
+  - `ResponseExpectations` - Response validation (status, headers, body_contains)
+  - `BackendExpectations` - Backend interaction (calls, used)
+  - `CacheExpectations` - Cache behavior (hit, age_lt, age_gt, stale)
 
 **Main operations:**
 
@@ -323,18 +326,24 @@ Validates test expectations against actual results. Supports cache-specific asse
 
 **Main operations:**
 
-- `Check()` - Validates ExpectSpec against Response and backend call count
+- `Check()` - Validates ExpectationsSpec against Response and backend call count
 
 **Supported assertions:**
 
-- Status code (required) - Exact match
-- Backend calls (optional) - Count match
-- Headers (optional) - Key-value exact match
-- Body contains (optional) - Substring match
-- Cached (optional) - Cache hit/miss detection via X-Varnish header (Phase 2)
-- Age less than (optional) - Age header < N seconds (Phase 2)
-- Age greater than (optional) - Age header > N seconds (Phase 2)
-- Stale (optional) - Stale content detection via X-Varnish-Stale or Warning: 110 (Phase 2)
+Response expectations (required):
+- Status code - Exact match
+- Headers - Key-value exact match
+- Body contains - Substring match
+
+Backend expectations (optional):
+- Calls - Count match
+- Used - Verify which backend was called
+
+Cache expectations (optional):
+- Hit - Cache hit/miss detection via X-Varnish header
+- Age less than - Age header < N seconds
+- Age greater than - Age header > N seconds
+- Stale - Stale content detection via X-Varnish-Stale or Warning: 110
 
 **Helper functions:**
 

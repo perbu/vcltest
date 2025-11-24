@@ -2,20 +2,20 @@ package testspec
 
 // TestSpec represents a single test case
 type TestSpec struct {
-	Name     string                 `yaml:"name"`
-	Request  RequestSpec            `yaml:"request,omitempty"`  // Optional: for single-request tests
-	Backend  BackendSpec            `yaml:"backend,omitempty"`  // Optional: for single-request tests (legacy)
-	Backends map[string]BackendSpec `yaml:"backends,omitempty"` // Optional: for multi-backend tests
-	Expect   ExpectSpec             `yaml:"expect,omitempty"`   // Optional: for single-request tests
-	Scenario []ScenarioStep         `yaml:"scenario,omitempty"` // Optional: for multi-step temporal tests
+	Name         string                 `yaml:"name"`
+	Request      RequestSpec            `yaml:"request,omitempty"`      // Optional: for single-request tests
+	Backend      BackendSpec            `yaml:"backend,omitempty"`      // Optional: for single-request tests (legacy)
+	Backends     map[string]BackendSpec `yaml:"backends,omitempty"`     // Optional: for multi-backend tests
+	Expectations ExpectationsSpec       `yaml:"expectations,omitempty"` // Optional: for single-request tests
+	Scenario     []ScenarioStep         `yaml:"scenario,omitempty"`     // Optional: for multi-step temporal tests
 }
 
 // ScenarioStep represents a single step in a temporal test scenario
 type ScenarioStep struct {
-	At      string      `yaml:"at"`                // Time offset from test start (e.g., "0s", "30s", "2m")
-	Request RequestSpec `yaml:"request,omitempty"` // HTTP request to make
-	Backend BackendSpec `yaml:"backend,omitempty"` // Mock backend response (if different from previous)
-	Expect  ExpectSpec  `yaml:"expect"`            // Expectations for this step
+	At           string           `yaml:"at"`                // Time offset from test start (e.g., "0s", "30s", "2m")
+	Request      RequestSpec      `yaml:"request,omitempty"` // HTTP request to make
+	Backend      BackendSpec      `yaml:"backend,omitempty"` // Mock backend response (if different from previous)
+	Expectations ExpectationsSpec `yaml:"expectations"`      // Expectations for this step
 }
 
 // RequestSpec defines the HTTP request to make
@@ -33,17 +33,32 @@ type BackendSpec struct {
 	Body    string            `yaml:"body,omitempty"`
 }
 
-// ExpectSpec defines test expectations
-type ExpectSpec struct {
+// ExpectationsSpec defines all test expectations (nested structure)
+type ExpectationsSpec struct {
+	Response ResponseExpectations `yaml:"response"`
+	Backend  *BackendExpectations `yaml:"backend,omitempty"`
+	Cache    *CacheExpectations   `yaml:"cache,omitempty"`
+}
+
+// ResponseExpectations validates what the client receives from Varnish
+type ResponseExpectations struct {
 	Status       int               `yaml:"status"`
-	BackendCalls *int              `yaml:"backend_calls,omitempty"`
-	BackendUsed  string            `yaml:"backend_used,omitempty"` // Check which backend was used
 	Headers      map[string]string `yaml:"headers,omitempty"`
 	BodyContains string            `yaml:"body_contains,omitempty"`
-	Cached       *bool             `yaml:"cached,omitempty"` // Check if response was cached
-	AgeGt        *int              `yaml:"age_gt,omitempty"` // Age header > N seconds
-	AgeLt        *int              `yaml:"age_lt,omitempty"` // Age header < N seconds
-	Stale        *bool             `yaml:"stale,omitempty"`  // Check if stale content served
+}
+
+// BackendExpectations validates backend interaction
+type BackendExpectations struct {
+	Calls *int   `yaml:"calls,omitempty"`
+	Used  string `yaml:"used,omitempty"`
+}
+
+// CacheExpectations validates cache-specific behavior
+type CacheExpectations struct {
+	Hit   *bool `yaml:"hit,omitempty"`
+	AgeGt *int  `yaml:"age_gt,omitempty"`
+	AgeLt *int  `yaml:"age_lt,omitempty"`
+	Stale *bool `yaml:"stale,omitempty"`
 }
 
 // ApplyDefaults sets default values for optional fields
@@ -62,6 +77,11 @@ func (t *TestSpec) ApplyDefaults() {
 		if t.Backend.Headers == nil {
 			t.Backend.Headers = make(map[string]string)
 		}
+
+		// Response expectations default
+		if t.Expectations.Response.Status == 0 {
+			t.Expectations.Response.Status = 200
+		}
 	} else {
 		// For scenario-based tests, apply defaults to each step
 		for i := range t.Scenario {
@@ -73,6 +93,11 @@ func (t *TestSpec) ApplyDefaults() {
 			}
 			if t.Scenario[i].Backend.Headers == nil {
 				t.Scenario[i].Backend.Headers = make(map[string]string)
+			}
+
+			// Response expectations default
+			if t.Scenario[i].Expectations.Response.Status == 0 {
+				t.Scenario[i].Expectations.Response.Status = 200
 			}
 		}
 	}

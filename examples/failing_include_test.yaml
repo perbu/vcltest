@@ -13,8 +13,9 @@ backends:
       X-Backend-Server: "backend-1"
     body: "Admin dashboard content"
 
-expect:
-  status: 404  # WRONG - will actually get 200, causing test to fail
-  headers:
-    X-Admin-Request: "true"    # This header is set in the include
-    X-Admin-Authorized: "yes"  # This header is set in the include
+expectations:
+  response:
+    status: 404  # WRONG - will actually get 200, causing test to fail
+    headers:
+      X-Admin-Request: "true"    # This header is set in the include
+      X-Admin-Authorized: "yes"  # This header is set in the include
