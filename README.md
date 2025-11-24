@@ -1,7 +1,12 @@
 # VCLTest
 
-Unlike VTest2, which is made to test varnishd, this tool is made explicitly to test your VCL logic in a performant
-manner, without requiring a complete recompile of your VCL for every test executed.
+Unlike VTest2, which is made to test varnishd, this tool is made explicitly to test your VCL.
+
+Development goals:
+ * Performance, only compile the VCL one for each VCL to be tested
+ * Time travel, you should be able to advance time
+ * Reasonable, not perfect, isolation. Ban the cache between test.
+ * Familiar or intuitive test syntax
 
 Write tests in YAML, see exactly which VCL lines are executed when tests fail.
 
@@ -18,7 +23,7 @@ go build -o vcltest ./cmd/vcltest
 ### Requirements
 
 - Go 1.21+
-- Varnish 7.x+ (`varnishd` and `varnishlog` in PATH)
+- Varnish 6.x+ (`varnishd` and `varnishlog` in PATH)
 - libfaketime (optional, for cache TTL tests): `brew install libfaketime` or `apt install faketime`
 
 ## Usage

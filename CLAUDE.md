@@ -1,7 +1,7 @@
 # VCLTest Package Documentation
 
 This document provides terse descriptions of key packages in VCLTest. For overall project goals and usage,
-see [README.md](README.md).
+see [README.md](README.md). For a quick 2-4 line overview of each package, see [pkg/README.md](pkg/README.md).
 
 ## pkg/varnish
 
