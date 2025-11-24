@@ -40,6 +40,14 @@ type VarnishResponse struct {
 	payload    string
 }
 
+// NewVarnishResponse creates a new VarnishResponse with the given status code and payload
+func NewVarnishResponse(statusCode int, payload string) VarnishResponse {
+	return VarnishResponse{
+		statusCode: statusCode,
+		payload:    payload,
+	}
+}
+
 // StatusCode returns the status code of the response
 func (vr VarnishResponse) StatusCode() int {
 	return vr.statusCode

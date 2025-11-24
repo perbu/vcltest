@@ -17,5 +17,11 @@ func ParseAddress(addr string) (host string, port string, err error) {
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("invalid address format %q, expected host:port", addr)
 	}
+	if parts[0] == "" {
+		return "", "", fmt.Errorf("invalid address format %q, host cannot be empty", addr)
+	}
+	if parts[1] == "" {
+		return "", "", fmt.Errorf("invalid address format %q, port cannot be empty", addr)
+	}
 	return parts[0], parts[1], nil
 }

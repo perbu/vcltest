@@ -246,6 +246,11 @@ func (m *MockVarnishadm) PanicClear() (VarnishResponse, error) {
 	return m.Exec("panic.clear")
 }
 
+// BanNukeCache nukes the cache by banning everything
+func (m *MockVarnishadm) BanNukeCache() (VarnishResponse, error) {
+	return m.Exec("ban.nuke")
+}
+
 // VCL command wrappers
 
 // VCLLoad loads a VCL configuration from a file in the mock
