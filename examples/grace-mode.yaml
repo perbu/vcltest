@@ -1,0 +1,44 @@
+name: Grace mode - serve stale content on backend failure
+
+scenario:
+  # Step 1: Initial request at t=0s - cache the content
+  - at: "0s"
+    request:
+      url: /article
+    backend:
+      status: 200
+      headers:
+        Content-Type: "text/html"
+      body: "Article content v1"
+    expectations:
+      response:
+        status: 200
+        body_contains: "Article content v1"
+      cache:
+        hit: false
+
+  # Step 2: Request at t=15s - within TTL (30s), cache hit
+  - at: "15s"
+    request:
+      url: /article
+    expectations:
+      response:
+        status: 200
+        body_contains: "Article content v1"
+      cache:
+        hit: true
+        stale: false
+
+  # Step 3: Request at t=35s - TTL expired, backend fails
+  # Varnish serves stale content from grace period
+  - at: "35s"
+    request:
+      url: /article
+    backend:
+      failure_mode: failed
+    expectations:
+      response:
+        status: 200
+        body_contains: "Article content v1"
+      cache:
+        stale: true
