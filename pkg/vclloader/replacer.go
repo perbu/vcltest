@@ -1,4 +1,4 @@
-package vcl
+package vclloader
 
 import (
 	"fmt"

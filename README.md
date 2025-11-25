@@ -33,7 +33,7 @@ vcltest [options] <test-file.yaml>
 
 Options:
   -v, -verbose       Enable verbose debug logging
-  -vcl <path>        VCL file to use (overrides auto-detection)
+  -vclloader <path>        VCL file to use (overrides auto-detection)
   -debug-dump        Preserve all artifacts in /tmp for debugging (no cleanup)
   -generate-schema   Generate JSON Schema for test specification format
   -version           Show version information

@@ -9,7 +9,7 @@ import (
 	"github.com/perbu/vcltest/pkg/cache"
 	"github.com/perbu/vcltest/pkg/varnish"
 	"github.com/perbu/vcltest/pkg/varnishadm"
-	"github.com/perbu/vcltest/pkg/vcl"
+	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
 // NewManager creates a new service manager with the given configuration
@@ -44,7 +44,7 @@ func NewManager(config *Config) (*Manager, error) {
 	)
 
 	// Create VCL loader
-	vclLoader := vcl.New(varnishadmServer, broker, config.VCLPath, config.Logger)
+	vclLoader := vclloader.New(varnishadmServer, broker, config.VCLPath, config.Logger)
 
 	// Create cache starter
 	cacheStarter := cache.New(varnishadmServer, broker, config.Logger)

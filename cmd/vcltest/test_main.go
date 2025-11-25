@@ -17,7 +17,7 @@ import (
 	"github.com/perbu/vcltest/pkg/service"
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnish"
-	"github.com/perbu/vcltest/pkg/vcl"
+	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
 // runTests runs the test file
@@ -267,8 +267,8 @@ func runTests(ctx context.Context, testFile string, verbose bool, cliVCL string,
 }
 
 // startAllBackends starts all mock backends needed across all tests
-func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[string]vcl.BackendAddress, map[string]*backend.MockBackend, error) {
-	addresses := make(map[string]vcl.BackendAddress)
+func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[string]vclloader.BackendAddress, map[string]*backend.MockBackend, error) {
+	addresses := make(map[string]vclloader.BackendAddress)
 	mockBackends := make(map[string]*backend.MockBackend)
 
 	// Collect backend configurations from all tests
@@ -318,14 +318,14 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 			return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
 		}
 
-		host, port, err := vcl.ParseAddress(addr)
+		host, port, err := vclloader.ParseAddress(addr)
 		if err != nil {
 			stopAllBackends(mockBackends, logger)
 			return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
 		}
 
 		mockBackends[name] = mock
-		addresses[name] = vcl.BackendAddress{Host: host, Port: port}
+		addresses[name] = vclloader.BackendAddress{Host: host, Port: port}
 		logger.Debug("Started shared backend", "name", name, "address", addr, "body_len", len(spec.Body))
 	}
 

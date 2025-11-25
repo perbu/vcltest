@@ -15,7 +15,7 @@ import (
 	"github.com/perbu/vcltest/pkg/recorder"
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnishadm"
-	"github.com/perbu/vcltest/pkg/vcl"
+	"github.com/perbu/vcltest/pkg/vclloader"
 	"github.com/perbu/vcltest/pkg/vclmod"
 )
 
@@ -116,12 +116,12 @@ type backendManager struct {
 
 // startBackends initializes and starts all mock backends
 // Returns a map of backend names to their addresses
-func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[string]vcl.BackendAddress, error) {
+func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[string]vclloader.BackendAddress, error) {
 	bm := &backendManager{
 		backends: make(map[string]*backend.MockBackend),
 		logger:   r.logger,
 	}
-	addresses := make(map[string]vcl.BackendAddress)
+	addresses := make(map[string]vclloader.BackendAddress)
 
 	// Handle multi-backend tests
 	if len(test.Backends) > 0 {
@@ -143,14 +143,14 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 				return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
 			}
 
-			host, port, err := vcl.ParseAddress(addr)
+			host, port, err := vclloader.ParseAddress(addr)
 			if err != nil {
 				bm.stopAll()
 				return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
 			}
 
 			bm.backends[name] = mock
-			addresses[name] = vcl.BackendAddress{Host: host, Port: port}
+			addresses[name] = vclloader.BackendAddress{Host: host, Port: port}
 			r.logger.Debug("Started backend", "name", name, "address", addr)
 		}
 	} else {
@@ -186,14 +186,14 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 			return nil, nil, fmt.Errorf("starting mock backend: %w", err)
 		}
 
-		host, port, err := vcl.ParseAddress(addr)
+		host, port, err := vclloader.ParseAddress(addr)
 		if err != nil {
 			bm.stopAll()
 			return nil, nil, fmt.Errorf("parsing backend address: %w", err)
 		}
 
 		bm.backends["default"] = mock
-		addresses["default"] = vcl.BackendAddress{Host: host, Port: port}
+		addresses["default"] = vclloader.BackendAddress{Host: host, Port: port}
 	}
 
 	return bm, addresses, nil
@@ -234,7 +234,7 @@ func (bm *backendManager) resetCallCounts() {
 }
 
 // replaceBackendsInVCL performs backend replacement using AST-based modification
-func (r *Runner) replaceBackendsInVCL(vclContent string, vclPath string, backends map[string]vcl.BackendAddress) (string, error) {
+func (r *Runner) replaceBackendsInVCL(vclContent string, vclPath string, backends map[string]vclloader.BackendAddress) (string, error) {
 	// Convert to vclmod.BackendAddress type
 	vclmodBackends := make(map[string]vclmod.BackendAddress)
 	for name, addr := range backends {
@@ -314,7 +314,7 @@ func (r *Runner) extractVCLFiles(vclShow *varnishadm.VCLShowResult, execByConfig
 }
 
 // LoadVCL loads VCL file and prepares it for sharing across all tests
-func (r *Runner) LoadVCL(vclPath string, backends map[string]vcl.BackendAddress) error {
+func (r *Runner) LoadVCL(vclPath string, backends map[string]vclloader.BackendAddress) error {
 	// Convert to vclmod.BackendAddress type
 	vclmodBackends := make(map[string]vclmod.BackendAddress)
 	for name, addr := range backends {

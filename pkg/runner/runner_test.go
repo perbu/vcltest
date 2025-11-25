@@ -9,7 +9,7 @@ import (
 	"github.com/perbu/vcltest/pkg/backend"
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnishadm"
-	"github.com/perbu/vcltest/pkg/vcl"
+	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
 // Phase 1: Pure functions tests
@@ -857,7 +857,7 @@ func TestReplaceBackendsInVCL(t *testing.T) {
 		name       string
 		vclContent string
 		vclPath    string
-		backends   map[string]vcl.BackendAddress
+		backends   map[string]vclloader.BackendAddress
 		wantErr    bool
 	}{
 		{
@@ -868,7 +868,7 @@ backend default {
 	.port = "80";
 }`,
 			vclPath: "/tmp/test.vcl",
-			backends: map[string]vcl.BackendAddress{
+			backends: map[string]vclloader.BackendAddress{
 				"default": {Host: "127.0.0.1", Port: "8080"},
 			},
 			wantErr: false,
@@ -880,7 +880,7 @@ backend {
 	invalid syntax here
 }`,
 			vclPath:  "/tmp/invalid.vcl",
-			backends: map[string]vcl.BackendAddress{},
+			backends: map[string]vclloader.BackendAddress{},
 			wantErr:  true,
 		},
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/perbu/vcltest/pkg/cache"
 	"github.com/perbu/vcltest/pkg/varnish"
 	"github.com/perbu/vcltest/pkg/varnishadm"
-	"github.com/perbu/vcltest/pkg/vcl"
+	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
 // Config holds the configuration for the service manager
@@ -32,7 +32,7 @@ type Manager struct {
 	broker         *broker.Broker
 	varnishadm     varnishadm.VarnishadmInterface
 	varnishManager *varnish.Manager
-	vclLoader      *vcl.Loader
+	vclLoader      *vclloader.Loader
 	cacheStarter   *cache.Starter
 	logger         *slog.Logger
 }
