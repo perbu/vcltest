@@ -188,6 +188,7 @@ func TestExtractVCLFiles(t *testing.T) {
 							ConfigID: 1,
 							Filename: "/tmp/test.vcl",
 							Size:     len(source),
+							Source:   source,
 						},
 					},
 					ConfigMap: map[int]string{
@@ -219,11 +220,13 @@ func TestExtractVCLFiles(t *testing.T) {
 							ConfigID: 1,
 							Filename: "/tmp/main.vcl",
 							Size:     len(file1),
+							Source:   file1,
 						},
 						{
 							ConfigID: 2,
 							Filename: "/tmp/lib.vcl",
 							Size:     len(file2),
+							Source:   file2,
 						},
 					},
 					ConfigMap: map[int]string{
@@ -262,6 +265,7 @@ func TestExtractVCLFiles(t *testing.T) {
 							ConfigID: 1,
 							Filename: "/tmp/empty.vcl",
 							Size:     len(source),
+							Source:   source,
 						},
 					},
 					ConfigMap: map[int]string{
@@ -292,16 +296,19 @@ func TestExtractVCLFiles(t *testing.T) {
 							ConfigID: 1,
 							Filename: "/tmp/test.vcl",
 							Size:     len(file1),
+							Source:   file1,
 						},
 						{
 							ConfigID: 0,
 							Filename: "<builtin>",
 							Size:     len(builtin),
+							Source:   builtin,
 						},
 						{
 							ConfigID: 2,
 							Filename: "/tmp/other.vcl",
 							Size:     len(file2),
+							Source:   file2,
 						},
 					},
 					ConfigMap: map[int]string{
@@ -1106,20 +1113,22 @@ func TestBackendManager_EmptyBackends(t *testing.T) {
 
 // Test extractVCLFiles edge cases
 
-func TestExtractVCLFiles_SizeMismatch(t *testing.T) {
+func TestExtractVCLFiles_UsesEntrySource(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	r := &Runner{
 		logger: logger,
 	}
 
-	// Test with size that exceeds available source
+	// Test that Source field is used directly from entry (not parsed from VCLSource)
+	source := "vcl 4.1;\n"
 	vclShow := &varnishadm.VCLShowResult{
-		VCLSource: "short",
+		VCLSource: "this should be ignored", // extractVCLFiles uses entry.Source now
 		Entries: []varnishadm.VCLConfigEntry{
 			{
 				ConfigID: 1,
 				Filename: "/tmp/test.vcl",
-				Size:     1000, // Way too big
+				Size:     len(source),
+				Source:   source, // This is what should be used
 			},
 		},
 		ConfigMap: map[int]string{
@@ -1127,11 +1136,13 @@ func TestExtractVCLFiles_SizeMismatch(t *testing.T) {
 		},
 	}
 
-	result := r.extractVCLFiles(vclShow, map[int][]int{})
+	result := r.extractVCLFiles(vclShow, map[int][]int{1: {1}})
 
-	// Should handle gracefully and not panic
-	if len(result) != 0 {
-		t.Errorf("extractVCLFiles() with size mismatch returned %d files, want 0", len(result))
+	if len(result) != 1 {
+		t.Fatalf("extractVCLFiles() returned %d files, want 1", len(result))
+	}
+	if result[0].Source != source {
+		t.Errorf("extractVCLFiles() used wrong source: got %q, want %q", result[0].Source, source)
 	}
 }
 

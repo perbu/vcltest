@@ -51,6 +51,7 @@ type VCLConfigEntry struct {
 	ConfigID int    // Config ID (0 = main VCL, 1+ = included files, high numbers = builtin)
 	Size     int    // Size in bytes
 	Filename string // File path or "<builtin>"
+	Source   string // The VCL source code for this file (parsed from vcl.show -v)
 }
 
 // VCLShowResult contains the parsed result of vcl.show -v command

@@ -271,43 +271,23 @@ func (r *Runner) replaceBackendsInVCL(vclContent string, vclPath string, backend
 	return modifiedVCL, nil
 }
 
-// extractVCLFiles splits VCLShowResult into per-file info with execution traces
+// extractVCLFiles converts VCLShowResult entries into VCLFileInfo with execution traces
 // Uses varnishd's native config ID mapping from vcl.show -v
 func (r *Runner) extractVCLFiles(vclShow *varnishadm.VCLShowResult, execByConfig map[int][]int) []VCLFileInfo {
 	var files []VCLFileInfo
 
-	// VCLSource contains all files concatenated (headers already stripped by parser)
-	// Use Entries with Size to split them back apart
-	sourceBytes := []byte(vclShow.VCLSource)
-	offset := 0
-
 	for _, entry := range vclShow.Entries {
-		// Skip builtin (not in ConfigMap)
+		// Skip builtin VCL
 		if entry.Filename == "<builtin>" {
-			// Still need to advance offset if builtin is in the source
-			if offset+entry.Size <= len(sourceBytes) {
-				offset += entry.Size
-			}
 			continue
 		}
-
-		// Extract this file's source using size
-		if offset+entry.Size > len(sourceBytes) {
-			r.logger.Warn("VCL size mismatch", "config", entry.ConfigID, "filename", entry.Filename,
-				"expected", entry.Size, "available", len(sourceBytes)-offset)
-			break
-		}
-
-		fileSource := string(sourceBytes[offset : offset+entry.Size])
 
 		files = append(files, VCLFileInfo{
 			ConfigID:      entry.ConfigID,
 			Filename:      entry.Filename,
-			Source:        fileSource,
-			ExecutedLines: execByConfig[entry.ConfigID], // Empty if not executed
+			Source:        entry.Source, // Use pre-parsed source from VCLConfigEntry
+			ExecutedLines: execByConfig[entry.ConfigID],
 		})
-
-		offset += entry.Size
 	}
 
 	return files
@@ -349,18 +329,15 @@ func (r *Runner) LoadVCL(vclPath string, backends map[string]vclloader.BackendAd
 		}
 	}
 
-	// Create a temporary directory for the VCL files
-	tmpDir, err := os.MkdirTemp("", "vcltest-shared-*")
-	if err != nil {
-		return fmt.Errorf("creating temp directory: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	// Use the vcl subdirectory of workDir - this is where Varnish's vcl_path points
+	// so relative includes will be resolved correctly
+	vclDir := filepath.Join(r.workDir, "vcl")
 
-	// Write each processed file to tmpDir preserving directory structure
+	// Write each processed file to vclDir preserving directory structure
 	var mainVCLFile string
 	for _, file := range processedFiles {
-		// Determine output path in tmpDir
-		outPath := filepath.Join(tmpDir, file.RelativePath)
+		// Determine output path in vclDir
+		outPath := filepath.Join(vclDir, file.RelativePath)
 
 		// Create parent directories if needed
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {

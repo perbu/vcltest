@@ -148,8 +148,8 @@ func runTests(ctx context.Context, testFile string, verbose bool, cliVCL string,
 	// Give varnishlog time to connect to VSM
 	time.Sleep(500 * time.Millisecond)
 
-	// Create test runner
-	testRunner := runner.New(varnishadm, "http://127.0.0.1:8080", varnishDir, logger, rec)
+	// Create test runner (use workDir since vcl_path points there for include resolution)
+	testRunner := runner.New(varnishadm, "http://127.0.0.1:8080", workDir, logger, rec)
 
 	// Set time controller for scenario-based tests
 	testRunner.SetTimeController(manager)

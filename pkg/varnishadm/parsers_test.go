@@ -349,6 +349,12 @@ func TestParseParenthesesContent(t *testing.T) {
 }
 
 func TestParseVCLShow(t *testing.T) {
+	// Define content with exact byte counts
+	// Note: Each file's content immediately follows its header (no blank line between)
+	mainVCL := "vcl 4.1;\n\nsub vcl_recv {\n    return (pass);\n}\n"       // 46 bytes
+	includedVCL := "sub my_sub {\n    set req.http.X-Test = \"1\";\n}\n" // 46 bytes
+	builtinVCL := "#- builtin VCL\n"                                      // 15 bytes
+
 	tests := []struct {
 		name     string
 		payload  string
@@ -357,82 +363,52 @@ func TestParseVCLShow(t *testing.T) {
 	}{
 		{
 			name: "VCL with includes",
-			payload: `// VCL.SHOW 0 356 /etc/varnish/main.vcl
-// VCL.SHOW 1 173 /etc/varnish/included.vcl
-// VCL.SHOW 2 7158 <builtin>
-
-vcl 4.1;
-
-sub vcl_recv {
-    if (req.url ~ "^/admin") {
-        return (synth(403, "Forbidden"));
-    }
-}`,
+			// Real varnish format: header followed immediately by content bytes
+			payload: "// VCL.SHOW 0 46 /etc/varnish/main.vcl\n" + mainVCL +
+				"// VCL.SHOW 1 46 /etc/varnish/included.vcl\n" + includedVCL +
+				"// VCL.SHOW 2 15 <builtin>\n" + builtinVCL,
 			expected: &VCLShowResult{
 				Entries: []VCLConfigEntry{
-					{ConfigID: 0, Size: 356, Filename: "/etc/varnish/main.vcl"},
-					{ConfigID: 1, Size: 173, Filename: "/etc/varnish/included.vcl"},
-					{ConfigID: 2, Size: 7158, Filename: "<builtin>"},
+					{ConfigID: 0, Size: 46, Filename: "/etc/varnish/main.vcl", Source: mainVCL},
+					{ConfigID: 1, Size: 46, Filename: "/etc/varnish/included.vcl", Source: includedVCL},
+					{ConfigID: 2, Size: 15, Filename: "<builtin>", Source: builtinVCL},
 				},
 				ConfigMap: map[int]string{
 					0: "/etc/varnish/main.vcl",
 					1: "/etc/varnish/included.vcl",
 				},
-				VCLSource: `
-vcl 4.1;
-
-sub vcl_recv {
-    if (req.url ~ "^/admin") {
-        return (synth(403, "Forbidden"));
-    }
-}`,
+				VCLSource: mainVCL + includedVCL + builtinVCL,
 			},
 			wantErr: false,
 		},
 		{
 			name: "VCL without includes",
-			payload: `// VCL.SHOW 0 245 /etc/varnish/default.vcl
-// VCL.SHOW 1 7158 <builtin>
-
-vcl 4.1;
-
-backend default {
-    .host = "127.0.0.1";
-    .port = "8080";
-}`,
+			payload: "// VCL.SHOW 0 46 /etc/varnish/default.vcl\n" + mainVCL +
+				"// VCL.SHOW 1 15 <builtin>\n" + builtinVCL,
 			expected: &VCLShowResult{
 				Entries: []VCLConfigEntry{
-					{ConfigID: 0, Size: 245, Filename: "/etc/varnish/default.vcl"},
-					{ConfigID: 1, Size: 7158, Filename: "<builtin>"},
+					{ConfigID: 0, Size: 46, Filename: "/etc/varnish/default.vcl", Source: mainVCL},
+					{ConfigID: 1, Size: 15, Filename: "<builtin>", Source: builtinVCL},
 				},
 				ConfigMap: map[int]string{
 					0: "/etc/varnish/default.vcl",
 				},
-				VCLSource: `
-vcl 4.1;
-
-backend default {
-    .host = "127.0.0.1";
-    .port = "8080";
-}`,
+				VCLSource: mainVCL + builtinVCL,
 			},
 			wantErr: false,
 		},
 		{
-			name: "Empty VCL source",
-			payload: `// VCL.SHOW 0 0 /etc/varnish/empty.vcl
-// VCL.SHOW 1 7158 <builtin>
-
-`,
+			name:    "Empty VCL source",
+			payload: "// VCL.SHOW 0 0 /etc/varnish/empty.vcl\n// VCL.SHOW 1 15 <builtin>\n" + builtinVCL,
 			expected: &VCLShowResult{
 				Entries: []VCLConfigEntry{
-					{ConfigID: 0, Size: 0, Filename: "/etc/varnish/empty.vcl"},
-					{ConfigID: 1, Size: 7158, Filename: "<builtin>"},
+					{ConfigID: 0, Size: 0, Filename: "/etc/varnish/empty.vcl", Source: ""},
+					{ConfigID: 1, Size: 15, Filename: "<builtin>", Source: builtinVCL},
 				},
 				ConfigMap: map[int]string{
 					0: "/etc/varnish/empty.vcl",
 				},
-				VCLSource: "\n",
+				VCLSource: builtinVCL,
 			},
 			wantErr: false,
 		},
@@ -468,6 +444,9 @@ backend default {
 				}
 				if entry.Filename != expected.Filename {
 					t.Errorf("Entry[%d].Filename = %q, want %q", i, entry.Filename, expected.Filename)
+				}
+				if entry.Source != expected.Source {
+					t.Errorf("Entry[%d].Source = %q, want %q", i, entry.Source, expected.Source)
 				}
 			}
 
