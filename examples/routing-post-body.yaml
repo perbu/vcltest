@@ -1,0 +1,89 @@
+name: POST request routing test
+
+backends:
+  user_api:
+    status: 201
+    headers:
+      X-Backend: "user_api"
+      Content-Type: "application/json"
+    body: '{"id": 123, "status": "created"}'
+
+  product_api:
+    status: 200
+    headers:
+      X-Backend: "product_api"
+      Content-Type: "application/json"
+    body: '{"product_id": 456, "updated": true}'
+
+  analytics_api:
+    status: 202
+    headers:
+      X-Backend: "analytics_api"
+      Content-Type: "application/json"
+    body: '{"event_id": "evt_789", "processed": true}'
+
+scenario:
+  # Test POST to create user
+  - at: "0s"
+    request:
+      method: POST
+      url: /api/users
+      headers:
+        Content-Type: "application/json"
+      body: '{"name": "John Doe", "email": "john@example.com"}'
+    expectations:
+      response:
+        status: 201
+        headers:
+          X-Backend: "user_api"
+        body_contains: "created"
+      backend:
+        used: "user_api"
+
+  # Test POST to update product
+  - at: "1s"
+    request:
+      method: POST
+      url: /api/products/456
+      headers:
+        Content-Type: "application/json"
+      body: '{"price": 29.99, "inventory": 100}'
+    expectations:
+      response:
+        status: 200
+        headers:
+          X-Backend: "product_api"
+        body_contains: "updated"
+      backend:
+        used: "product_api"
+
+  # Test POST to analytics endpoint
+  - at: "2s"
+    request:
+      method: POST
+      url: /api/events
+      headers:
+        Content-Type: "application/json"
+      body: '{"event": "page_view", "user_id": 123, "timestamp": 1234567890}'
+    expectations:
+      response:
+        status: 202
+        headers:
+          X-Backend: "analytics_api"
+        body_contains: "processed"
+      backend:
+        used: "analytics_api"
+
+  # Test POST with form data
+  - at: "3s"
+    request:
+      method: POST
+      url: /api/users/login
+      headers:
+        Content-Type: "application/x-www-form-urlencoded"
+      body: "username=testuser&password=secret123"
+    expectations:
+      response:
+        status: 201
+      backend:
+        used: "user_api"
