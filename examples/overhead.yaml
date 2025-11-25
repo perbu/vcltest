@@ -3,9 +3,10 @@ name: "overhead_01"
 request:
   method: GET
   url: /test1
-backend:
-  status: 200
-  body: "response1"
+backends:
+  default:
+    status: 200
+    body: "response1"
 expectations:
   response:
     status: 200
@@ -15,9 +16,10 @@ name: "overhead_02"
 request:
   method: GET
   url: /test2
-backend:
-  status: 200
-  body: "response2"
+backends:
+  default:
+    status: 200
+    body: "response2"
 expectations:
   response:
     status: 200
@@ -27,9 +29,10 @@ name: "overhead_03"
 request:
   method: GET
   url: /test3
-backend:
-  status: 200
-  body: "response3"
+backends:
+  default:
+    status: 200
+    body: "response3"
 expectations:
   response:
     status: 200
@@ -39,9 +42,10 @@ name: "overhead_04"
 request:
   method: GET
   url: /test4
-backend:
-  status: 200
-  body: "response4"
+backends:
+  default:
+    status: 200
+    body: "response4"
 expectations:
   response:
     status: 200
@@ -51,9 +55,10 @@ name: "overhead_05"
 request:
   method: GET
   url: /test5
-backend:
-  status: 200
-  body: "response5"
+backends:
+  default:
+    status: 200
+    body: "response5"
 expectations:
   response:
     status: 200
@@ -63,9 +68,10 @@ name: "overhead_06"
 request:
   method: GET
   url: /test6
-backend:
-  status: 200
-  body: "response6"
+backends:
+  default:
+    status: 200
+    body: "response6"
 expectations:
   response:
     status: 200
@@ -75,9 +81,10 @@ name: "overhead_07"
 request:
   method: GET
   url: /test7
-backend:
-  status: 200
-  body: "response7"
+backends:
+  default:
+    status: 200
+    body: "response7"
 expectations:
   response:
     status: 200
@@ -87,9 +94,10 @@ name: "overhead_08"
 request:
   method: GET
   url: /test8
-backend:
-  status: 200
-  body: "response8"
+backends:
+  default:
+    status: 200
+    body: "response8"
 expectations:
   response:
     status: 200
@@ -99,9 +107,10 @@ name: "overhead_09"
 request:
   method: GET
   url: /test9
-backend:
-  status: 200
-  body: "response9"
+backends:
+  default:
+    status: 200
+    body: "response9"
 expectations:
   response:
     status: 200
@@ -111,9 +120,10 @@ name: "overhead_10"
 request:
   method: GET
   url: /test10
-backend:
-  status: 200
-  body: "response10"
+backends:
+  default:
+    status: 200
+    body: "response10"
 expectations:
   response:
     status: 200

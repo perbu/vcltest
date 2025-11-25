@@ -1,16 +1,18 @@
 name: Backend reconfiguration demo
 
+backends:
+  default:
+    status: 200
+    headers:
+      Cache-Control: "max-age=30"
+      X-Backend-Version: "1"
+    body: "Version 1 content"
+
 scenario:
   # Step 1: Backend returns "Version 1" with Cache-Control
   - at: "0s"
     request:
       url: /content
-    backend:
-      status: 200
-      headers:
-        Cache-Control: "max-age=30"
-        X-Backend-Version: "1"
-      body: "Version 1 content"
     expectations:
       response:
         status: 200
@@ -31,12 +33,13 @@ scenario:
   - at: "40s"
     request:
       url: /content
-    backend:
-      status: 200
-      headers:
-        Cache-Control: "max-age=30"
-        X-Backend-Version: "2"
-      body: "Version 2 content"
+    backends:
+      default:
+        status: 200
+        headers:
+          Cache-Control: "max-age=30"
+          X-Backend-Version: "2"
+        body: "Version 2 content"
     expectations:
       response:
         status: 200

@@ -1,16 +1,18 @@
 name: Cache TTL test - 60 second max-age
 
+backends:
+  default:
+    status: 200
+    headers:
+      Cache-Control: "max-age=60"
+      Content-Type: "text/html"
+    body: "Article content"
+
 scenario:
   # Step 1: Initial request at t=0s - cache miss
   - at: "0s"
     request:
       url: /article
-    backend:
-      status: 200
-      headers:
-        Cache-Control: "max-age=60"
-        Content-Type: "text/html"
-      body: "Article content"
     expectations:
       response:
         status: 200

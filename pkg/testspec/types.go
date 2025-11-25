@@ -4,18 +4,17 @@ package testspec
 type TestSpec struct {
 	Name         string                 `yaml:"name" json:"name" jsonschema:"required,description=Name of the test case"`
 	Request      RequestSpec            `yaml:"request,omitempty" json:"request,omitempty" jsonschema:"description=HTTP request specification for single-request tests"`
-	Backend      BackendSpec            `yaml:"backend,omitempty" json:"backend,omitempty" jsonschema:"description=Single backend response specification (legacy format)"`
-	Backends     map[string]BackendSpec `yaml:"backends,omitempty" json:"backends,omitempty" jsonschema:"description=Named backend response specifications for multi-backend tests"`
+	Backends     map[string]BackendSpec `yaml:"backends,omitempty" json:"backends,omitempty" jsonschema:"description=Named backend response specifications"`
 	Expectations ExpectationsSpec       `yaml:"expectations,omitempty" json:"expectations,omitempty" jsonschema:"description=Test expectations for single-request tests"`
 	Scenario     []ScenarioStep         `yaml:"scenario,omitempty" json:"scenario,omitempty" jsonschema:"description=Multi-step temporal test scenario"`
 }
 
 // ScenarioStep represents a single step in a temporal test scenario
 type ScenarioStep struct {
-	At           string           `yaml:"at" json:"at" jsonschema:"required,description=Time offset from test start (e.g. '0s' '30s' '2m'),pattern=^[0-9]+(s|m|h)$"`
-	Request      RequestSpec      `yaml:"request,omitempty" json:"request,omitempty" jsonschema:"description=HTTP request to make at this step"`
-	Backend      BackendSpec      `yaml:"backend,omitempty" json:"backend,omitempty" jsonschema:"description=Mock backend response for this step"`
-	Expectations ExpectationsSpec `yaml:"expectations" json:"expectations" jsonschema:"required,description=Test expectations for this step"`
+	At           string                 `yaml:"at" json:"at" jsonschema:"required,description=Time offset from test start (e.g. '0s' '30s' '2m'),pattern=^[0-9]+(s|m|h)$"`
+	Request      RequestSpec            `yaml:"request,omitempty" json:"request,omitempty" jsonschema:"description=HTTP request to make at this step"`
+	Backends     map[string]BackendSpec `yaml:"backends,omitempty" json:"backends,omitempty" jsonschema:"description=Backend response overrides for this step"`
+	Expectations ExpectationsSpec       `yaml:"expectations" json:"expectations" jsonschema:"required,description=Test expectations for this step"`
 }
 
 // RequestSpec defines the HTTP request to make
@@ -102,12 +101,15 @@ func (t *TestSpec) ApplyDefaults() {
 			t.Request.Method = "GET"
 		}
 
-		// Backend defaults
-		if t.Backend.Status == 0 {
-			t.Backend.Status = 200
-		}
-		if t.Backend.Headers == nil {
-			t.Backend.Headers = make(map[string]string)
+		// Backend defaults - apply to all backends in the map
+		for name, spec := range t.Backends {
+			if spec.Status == 0 {
+				spec.Status = 200
+			}
+			if spec.Headers == nil {
+				spec.Headers = make(map[string]string)
+			}
+			t.Backends[name] = spec
 		}
 
 		// Response expectations default
@@ -120,11 +122,16 @@ func (t *TestSpec) ApplyDefaults() {
 			if t.Scenario[i].Request.Method == "" {
 				t.Scenario[i].Request.Method = "GET"
 			}
-			if t.Scenario[i].Backend.Status == 0 && t.Scenario[i].Backend.Headers != nil {
-				t.Scenario[i].Backend.Status = 200
-			}
-			if t.Scenario[i].Backend.Headers == nil {
-				t.Scenario[i].Backend.Headers = make(map[string]string)
+
+			// Apply defaults to step-level backend overrides
+			for name, spec := range t.Scenario[i].Backends {
+				if spec.Status == 0 {
+					spec.Status = 200
+				}
+				if spec.Headers == nil {
+					spec.Headers = make(map[string]string)
+				}
+				t.Scenario[i].Backends[name] = spec
 			}
 
 			// Response expectations default

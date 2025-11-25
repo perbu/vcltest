@@ -79,9 +79,6 @@ func validate(test *TestSpec) error {
 		if test.Expectations.Response.Status == 0 {
 			return fmt.Errorf("expectations.response.status is required")
 		}
-		if err := validateBackendSpec(test.Backend, "backend"); err != nil {
-			return err
-		}
 		for name, spec := range test.Backends {
 			if err := validateBackendSpec(spec, fmt.Sprintf("backends.%s", name)); err != nil {
 				return err
@@ -104,8 +101,10 @@ func validate(test *TestSpec) error {
 			if step.Expectations.Response.Status == 0 {
 				return fmt.Errorf("scenario step %d: expectations.response.status is required", i+1)
 			}
-			if err := validateBackendSpec(step.Backend, fmt.Sprintf("scenario step %d: backend", i+1)); err != nil {
-				return err
+			for name, spec := range step.Backends {
+				if err := validateBackendSpec(spec, fmt.Sprintf("scenario step %d: backends.%s", i+1, name)); err != nil {
+					return err
+				}
 			}
 		}
 	}

@@ -42,8 +42,9 @@ func TestLoad_InvalidFailureMode(t *testing.T) {
 	content := `name: Test with invalid failure mode
 request:
   url: /test
-backend:
-  failure_mode: invalid
+backends:
+  default:
+    failure_mode: invalid
 expectations:
   response:
     status: 200
@@ -67,8 +68,9 @@ func TestLoad_ValidFailureMode(t *testing.T) {
 	content := `name: Test with valid failure mode
 request:
   url: /test
-backend:
-  failure_mode: failed
+backends:
+  default:
+    failure_mode: failed
 expectations:
   response:
     status: 503
@@ -87,7 +89,7 @@ expectations:
 		t.Fatalf("Expected 1 test, got %d", len(tests))
 	}
 
-	if tests[0].Backend.FailureMode != "failed" {
-		t.Errorf("Expected failure_mode 'failed', got %q", tests[0].Backend.FailureMode)
+	if tests[0].Backends["default"].FailureMode != "failed" {
+		t.Errorf("Expected failure_mode 'failed', got %q", tests[0].Backends["default"].FailureMode)
 	}
 }

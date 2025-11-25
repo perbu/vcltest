@@ -174,14 +174,21 @@ Parses YAML test specification files. Supports both single-request and scenario-
 
 **Key types:**
 
-- `TestSpec` - Complete test specification (name, request/backend/expectations OR scenario) - VCL is resolved separately
-- `ScenarioStep` - Single step in temporal test scenario (at, request, backend, expectations)
+- `TestSpec` - Complete test specification (name, request/backends/expectations OR scenario) - VCL is resolved separately
+- `ScenarioStep` - Single step in temporal test scenario (at, request, backends, expectations)
 - `RequestSpec` - HTTP request definition (method, URL, headers, body)
-- `BackendSpec` - Mock backend response (status, headers, body)
+- `BackendSpec` - Mock backend response (status, headers, body, failure_mode)
 - `ExpectationsSpec` - Nested test expectations structure containing:
   - `ResponseExpectations` - Response validation (status, headers, body_contains)
   - `BackendExpectations` - Backend interaction (calls, used)
   - `CacheExpectations` - Cache behavior (hit, age_lt, age_gt, stale)
+
+**Backend specification:**
+
+- Use `backends:` (plural) with named backends map - there is no singular `backend:` field
+- Each backend needs a name (e.g., `default`, `api`, `web`)
+- For single-backend tests, use `backends: { default: { ... } }`
+- Scenario steps can override backends with step-level `backends:` map
 
 **Main operations:**
 

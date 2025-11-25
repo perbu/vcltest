@@ -123,77 +123,34 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 	}
 	addresses := make(map[string]vclloader.BackendAddress)
 
-	// Handle multi-backend tests
-	if len(test.Backends) > 0 {
-		for name, spec := range test.Backends {
-			cfg := backend.Config{
-				Status:      spec.Status,
-				Headers:     spec.Headers,
-				Body:        spec.Body,
-				FailureMode: spec.FailureMode,
-			}
-			// Apply default status if not set
-			if cfg.Status == 0 {
-				cfg.Status = 200
-			}
-			mock := backend.New(cfg)
-			addr, err := mock.Start()
-			if err != nil {
-				bm.stopAll()
-				return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
-			}
-
-			host, port, err := vclloader.ParseAddress(addr)
-			if err != nil {
-				bm.stopAll()
-				return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
-			}
-
-			bm.backends[name] = mock
-			addresses[name] = vclloader.BackendAddress{Host: host, Port: port}
-			r.logger.Debug("Started backend", "name", name, "address", addr)
-		}
-	} else {
-		// Legacy single-backend mode - get backend config from test.Backend or first scenario step
-		var backendSpec testspec.BackendSpec
-		if test.Backend.Status != 0 || len(test.Backend.Headers) > 0 || test.Backend.Body != "" {
-			// Use test-level backend config
-			backendSpec = test.Backend
-		} else if len(test.Scenario) > 0 {
-			// Use backend config from first scenario step that has one
-			for _, step := range test.Scenario {
-				if step.Backend.Status != 0 || len(step.Backend.Headers) > 0 || step.Backend.Body != "" {
-					backendSpec = step.Backend
-					break
-				}
-			}
-		}
-
+	// Start backends from test.Backends map
+	for name, spec := range test.Backends {
 		cfg := backend.Config{
-			Status:      backendSpec.Status,
-			Headers:     backendSpec.Headers,
-			Body:        backendSpec.Body,
-			FailureMode: backendSpec.FailureMode,
+			Status:      spec.Status,
+			Headers:     spec.Headers,
+			Body:        spec.Body,
+			FailureMode: spec.FailureMode,
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
 			cfg.Status = 200
 		}
-
 		mock := backend.New(cfg)
 		addr, err := mock.Start()
 		if err != nil {
-			return nil, nil, fmt.Errorf("starting mock backend: %w", err)
+			bm.stopAll()
+			return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
 		}
 
 		host, port, err := vclloader.ParseAddress(addr)
 		if err != nil {
 			bm.stopAll()
-			return nil, nil, fmt.Errorf("parsing backend address: %w", err)
+			return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
 		}
 
-		bm.backends["default"] = mock
-		addresses["default"] = vclloader.BackendAddress{Host: host, Port: port}
+		bm.backends[name] = mock
+		addresses[name] = vclloader.BackendAddress{Host: host, Port: port}
+		r.logger.Debug("Started backend", "name", name, "address", addr)
 	}
 
 	return bm, addresses, nil
@@ -915,34 +872,23 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 		}
 
 		// Update backend configuration if specified in this step
-		if step.Backend.Status != 0 || len(step.Backend.Headers) > 0 || step.Backend.Body != "" {
-			if r.mockBackends != nil {
-				// Determine which backend to update (default or specific name)
-				backendName := "default"
-				if len(test.Backends) > 0 {
-					// For multi-backend tests, we would need a way to specify which backend
-					// For now, update all backends with the same config (legacy behavior)
-					for name := range test.Backends {
-						backendName = name
-						break
-					}
-				}
-
-				if mock, ok := r.mockBackends[backendName]; ok {
+		if len(step.Backends) > 0 && r.mockBackends != nil {
+			for name, spec := range step.Backends {
+				if mock, ok := r.mockBackends[name]; ok {
 					cfg := backend.Config{
-						Status:      step.Backend.Status,
-						Headers:     step.Backend.Headers,
-						Body:        step.Backend.Body,
-						FailureMode: step.Backend.FailureMode,
+						Status:      spec.Status,
+						Headers:     spec.Headers,
+						Body:        spec.Body,
+						FailureMode: spec.FailureMode,
 					}
 					// Apply default status if not set
 					if cfg.Status == 0 {
 						cfg.Status = 200
 					}
 					mock.UpdateConfig(cfg)
-					r.logger.Debug("Updated backend config for step", "step", stepIdx+1, "backend", backendName, "status", cfg.Status)
+					r.logger.Debug("Updated backend config for step", "step", stepIdx+1, "backend", name, "status", cfg.Status)
 				} else {
-					r.logger.Warn("Backend not found for config update", "backend", backendName, "step", stepIdx+1)
+					r.logger.Warn("Backend not found for config update", "backend", name, "step", stepIdx+1)
 				}
 			}
 		}

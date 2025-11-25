@@ -407,8 +407,10 @@ func TestStartBackends_SingleBackend(t *testing.T) {
 			name: "single backend with default status",
 			testSpec: testspec.TestSpec{
 				Name: "test",
-				Backend: testspec.BackendSpec{
-					Body: "Hello World",
+				Backends: map[string]testspec.BackendSpec{
+					"default": {
+						Body: "Hello World",
+					},
 				},
 			},
 			wantErr: false,
@@ -417,9 +419,11 @@ func TestStartBackends_SingleBackend(t *testing.T) {
 			name: "single backend with custom status",
 			testSpec: testspec.TestSpec{
 				Name: "test",
-				Backend: testspec.BackendSpec{
-					Status: 404,
-					Body:   "Not Found",
+				Backends: map[string]testspec.BackendSpec{
+					"default": {
+						Status: 404,
+						Body:   "Not Found",
+					},
 				},
 			},
 			wantErr: false,
@@ -428,12 +432,14 @@ func TestStartBackends_SingleBackend(t *testing.T) {
 			name: "single backend with headers",
 			testSpec: testspec.TestSpec{
 				Name: "test",
-				Backend: testspec.BackendSpec{
-					Status: 200,
-					Headers: map[string]string{
-						"X-Custom": "value",
+				Backends: map[string]testspec.BackendSpec{
+					"default": {
+						Status: 200,
+						Headers: map[string]string{
+							"X-Custom": "value",
+						},
+						Body: "test body",
 					},
-					Body: "test body",
 				},
 			},
 			wantErr: false,
@@ -948,16 +954,18 @@ func TestStartBackends_ScenarioBackendConfig(t *testing.T) {
 		logger: logger,
 	}
 
-	// Test with scenario that has backend config in first step
+	// Test with scenario that has top-level backends config
 	testSpec := testspec.TestSpec{
 		Name: "scenario test",
+		Backends: map[string]testspec.BackendSpec{
+			"default": {
+				Status: 404,
+				Body:   "Not Found",
+			},
+		},
 		Scenario: []testspec.ScenarioStep{
 			{
 				At: "0s",
-				Backend: testspec.BackendSpec{
-					Status: 404,
-					Body:   "Not Found",
-				},
 			},
 		},
 	}

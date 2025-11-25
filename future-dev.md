@@ -42,65 +42,57 @@ See `examples/backend-failure.yaml` for usage.
 
 ### 2. Grace Mode / Stale Content Delivery
 
-**Status**: Partially supported (stale assertion exists, but cannot trigger grace scenarios)
+**Status**: Implemented
 
-**Current State**:
-- `stale` assertion exists and checks for `X-Varnish-Stale` header or `Warning: 110`
-- Scenario-based tests support time manipulation
-- **Missing**: Backend failure modes to trigger grace delivery
+Grace mode testing combines scenario-based time manipulation with backend failure modes to verify stale content delivery.
 
-**VCL Background**:
+**Usage**:
+```yaml
+name: Grace mode - serve stale on backend failure
+scenario:
+  - at: "0s"
+    request:
+      url: /article
+    backend:
+      status: 200
+      body: "Article content"
+    expectations:
+      cache:
+        hit: false
+
+  - at: "35s"  # TTL (30s) expired, backend fails
+    request:
+      url: /article
+    backend:
+      failure_mode: failed
+    expectations:
+      response:
+        status: 200
+      cache:
+        stale: true
+```
+
+**VCL Requirements**:
+
+The VCL must set `X-Varnish-Stale` header for reliable stale detection:
 ```vcl
 sub vcl_backend_response {
-    set beresp.ttl = 60s;      # Fresh for 60s
-    set beresp.grace = 300s;   # Serve stale for 5min if backend down
+    set beresp.ttl = 30s;
+    set beresp.grace = 300s;  # Serve stale for 5min if backend down
+}
+
+sub vcl_deliver {
+    if (obj.ttl < 0s) {
+        set resp.http.X-Varnish-Stale = "1";
+    }
 }
 ```
 
-**Implementation Tasks**:
+See `examples/grace-mode.yaml` and `examples/grace-mode.vcl` for a complete working example.
 
-1. Implement backend failure modes (see above)
-
-2. Create `examples/grace-mode.yaml` and `examples/grace-mode.vcl`:
-   ```yaml
-   name: Grace mode - serve stale on backend failure
-   scenario:
-     - at: "0s"
-       request:
-         url: /article
-       backend:
-         status: 200
-         headers:
-           Cache-Control: "max-age=30"
-         body: "Article v1"
-       expectations:
-         response:
-           status: 200
-         cache:
-           hit: false
-
-     - at: "60s"  # TTL expired, backend fails
-       request:
-         url: /article
-       backend:
-         fail: true
-       expectations:
-         response:
-           status: 200
-         cache:
-           stale: true
-   ```
-
-3. Document that VCL should set `X-Varnish-Stale` header for reliable detection:
-   ```vcl
-   sub vcl_deliver {
-       if (obj.ttl < 0s) {
-           set resp.http.X-Varnish-Stale = "1";
-       }
-   }
-   ```
-
-**Dependencies**: Backend failure modes
+**Detection Methods**:
+- `X-Varnish-Stale` header (recommended, set by VCL)
+- `Warning: 110` HTTP header (standard, but Varnish doesn't set automatically)
 
 ---
 
@@ -319,9 +311,9 @@ ESI requires multiple backend fragments and complex setup. Use VTest for ESI sce
 
 ## Implementation Order
 
-1. **Backend failure modes** (foundational - enables grace, error pages)
+1. ~~**Backend failure modes**~~ ✅ Implemented
 2. **Backend echo mode** (foundational - enables request verification)
-3. **Grace mode examples**
+3. ~~**Grace mode examples**~~ ✅ Implemented
 4. **Error page examples**
 5. **Cookie examples**
 6. **Vary header examples**
@@ -333,13 +325,13 @@ ESI requires multiple backend fragments and complex setup. Use VTest for ESI sce
 
 ## Example Files Needed
 
-| File | Dependencies |
-|------|--------------|
-| `examples/grace-mode.{yaml,vcl}` | Backend failure modes |
-| `examples/error-pages.{yaml,vcl}` | Backend failure modes |
-| `examples/cookies.{yaml,vcl}` | None |
-| `examples/vary-headers.{yaml,vcl}` | None |
-| `examples/header-manipulation.{yaml,vcl}` | Backend echo mode |
+| File | Status |
+|------|--------|
+| `examples/grace-mode.{yaml,vcl}` | ✅ Implemented |
+| `examples/error-pages.{yaml,vcl}` | Pending (backend failure modes ready) |
+| `examples/cookies.{yaml,vcl}` | Pending |
+| `examples/vary-headers.{yaml,vcl}` | Pending |
+| `examples/header-manipulation.{yaml,vcl}` | Pending (needs backend echo mode) |
 
 ---
 

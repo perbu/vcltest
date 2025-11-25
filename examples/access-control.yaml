@@ -4,9 +4,10 @@ name: Request without header is denied
 request:
   url: /api/test
 
-backend:
-  status: 200
-  body: "backend response"
+backends:
+  default:
+    status: 200
+    body: "backend response"
 
 expectations:
   response:
@@ -20,9 +21,10 @@ request:
   headers:
     X-Letmein: "On"
 
-backend:
-  status: 200
-  body: "backend response"
+backends:
+  default:
+    status: 200
+    body: "backend response"
 
 expectations:
   response:

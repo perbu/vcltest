@@ -1,0 +1,64 @@
+name: PURGE invalidates cached content
+
+backends:
+  default:
+    status: 200
+    headers:
+      Content-Type: "text/html"
+    body: "Original content v1"
+
+scenario:
+  # Step 1: Initial request - cache miss
+  - at: "0s"
+    request:
+      url: /page
+    expectations:
+      response:
+        status: 200
+        body_contains: "Original content v1"
+        headers:
+          X-Cache: "MISS"
+      cache:
+        hit: false
+
+  # Step 2: Second request - should be a cache hit
+  - at: "5s"
+    request:
+      url: /page
+    expectations:
+      response:
+        status: 200
+        body_contains: "Original content v1"
+        headers:
+          X-Cache: "HIT"
+      cache:
+        hit: true
+
+  # Step 3: PURGE request to invalidate the cache
+  - at: "10s"
+    request:
+      method: PURGE
+      url: /page
+    expectations:
+      response:
+        status: 200
+
+  # Step 4: Request after purge - should be a cache miss with fresh content
+  - at: "15s"
+    request:
+      url: /page
+    backends:
+      default:
+        status: 200
+        headers:
+          Content-Type: "text/html"
+        body: "Updated content v2"
+    expectations:
+      response:
+        status: 200
+        body_contains: "Updated content v2"
+        headers:
+          X-Cache: "MISS"
+      cache:
+        hit: false
+

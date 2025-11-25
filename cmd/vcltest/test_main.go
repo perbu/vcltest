@@ -276,17 +276,9 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 	backendConfigs := make(map[string]testspec.BackendSpec)
 
 	for _, test := range tests {
-		if len(test.Backends) > 0 {
-			// Multi-backend mode
-			for name, spec := range test.Backends {
-				if _, exists := backendConfigs[name]; !exists {
-					backendConfigs[name] = spec
-				}
-			}
-		} else {
-			// Single backend mode - use "default" backend
-			if _, exists := backendConfigs["default"]; !exists {
-				backendConfigs["default"] = test.Backend
+		for name, spec := range test.Backends {
+			if _, exists := backendConfigs[name]; !exists {
+				backendConfigs[name] = spec
 			}
 		}
 	}

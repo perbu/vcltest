@@ -4,9 +4,10 @@ name: Wrong status expectation - should fail
 request:
   url: /api/users
 
-backend:
-  status: 200
-  body: '{"users": []}'
+backends:
+  default:
+    status: 200
+    body: '{"users": []}'
 
 expectations:
   response:

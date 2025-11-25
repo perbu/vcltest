@@ -1,15 +1,17 @@
 name: Grace mode - serve stale content on backend failure
 
+backends:
+  default:
+    status: 200
+    headers:
+      Content-Type: "text/html"
+    body: "Article content v1"
+
 scenario:
   # Step 1: Initial request at t=0s - cache the content
   - at: "0s"
     request:
       url: /article
-    backend:
-      status: 200
-      headers:
-        Content-Type: "text/html"
-      body: "Article content v1"
     expectations:
       response:
         status: 200
@@ -34,8 +36,9 @@ scenario:
   - at: "35s"
     request:
       url: /article
-    backend:
-      failure_mode: failed
+    backends:
+      default:
+        failure_mode: failed
     expectations:
       response:
         status: 200
