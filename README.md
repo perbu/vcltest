@@ -35,6 +35,7 @@ Options:
   -v, -verbose       Enable verbose debug logging
   -vcl <path>        VCL file to use (overrides auto-detection)
   -debug-dump        Preserve all artifacts in /tmp for debugging (no cleanup)
+  -generate-schema   Generate JSON Schema for test specification format
   -version           Show version information
 ```
 
@@ -82,6 +83,30 @@ expectations:
 ```
 
 ## Test Format
+
+### JSON Schema for IDE Support
+
+VCLTest can generate a JSON Schema for the test specification format, enabling IDE autocomplete and validation:
+
+```bash
+# Generate schema to a file
+vcltest -generate-schema > testspec.schema.json
+```
+
+**VS Code setup** (add to `.vscode/settings.json`):
+```json
+{
+  "yaml.schemas": {
+    "./testspec.schema.json": "*.yaml"
+  }
+}
+```
+
+**IntelliJ/PyCharm setup:**
+1. Go to Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
+2. Add new mapping with your schema file and `*.yaml` pattern
+
+This provides real-time validation, autocomplete, and inline documentation while editing test files.
 
 ### Basic Test
 

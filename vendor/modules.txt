@@ -1,9 +1,22 @@
+# github.com/bahlo/generic-list-go v0.2.0
+## explicit; go 1.18
+github.com/bahlo/generic-list-go
 # github.com/borud/broker v1.0.2
 ## explicit; go 1.15
 github.com/borud/broker
+# github.com/buger/jsonparser v1.1.1
+## explicit; go 1.13
+github.com/buger/jsonparser
 # github.com/dghubble/trie v0.0.0-20201011220304-ed6d6b8add55
 ## explicit; go 1.12
 github.com/dghubble/trie
+# github.com/invopop/jsonschema v0.13.0
+## explicit; go 1.18
+github.com/invopop/jsonschema
+# github.com/mailru/easyjson v0.7.7
+## explicit; go 1.12
+github.com/mailru/easyjson/buffer
+github.com/mailru/easyjson/jwriter
 # github.com/perbu/vclparser v0.0.0-20251123183552-14568509436e
 ## explicit; go 1.21
 github.com/perbu/vclparser/pkg/ast
@@ -12,6 +25,9 @@ github.com/perbu/vclparser/pkg/metadata
 github.com/perbu/vclparser/pkg/parser
 github.com/perbu/vclparser/pkg/renderer
 github.com/perbu/vclparser/pkg/types
+# github.com/wk8/go-ordered-map/v2 v2.1.8
+## explicit; go 1.18
+github.com/wk8/go-ordered-map/v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3

@@ -3,17 +3,13 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 
-	"github.com/perbu/vcltest/pkg/config"
-	"github.com/perbu/vcltest/pkg/service"
-	"github.com/perbu/vcltest/pkg/varnish"
+	"github.com/invopop/jsonschema"
+	"github.com/perbu/vcltest/pkg/testspec"
 )
 
 //go:embed .version
@@ -32,10 +28,10 @@ func run(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("vcltest", flag.ExitOnError)
 	verbose := flags.Bool("verbose", false, "verbose output")
 	flags.BoolVar(verbose, "v", false, "verbose output (shorthand)")
-	configFile := flags.String("config", "vcltest.yaml", "configuration file")
 	showVersion := flags.Bool("version", false, "show version")
 	vclFileFlag := flags.String("vcl", "", "VCL file to use for tests (overrides auto-detection)")
 	debugDump := flags.Bool("debug-dump", false, "preserve all artifacts in /tmp for debugging (no cleanup)")
+	generateSchema := flags.Bool("generate-schema", false, "generate JSON schema for test specification")
 
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parsing flags: %w", err)
@@ -47,108 +43,38 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	// Check for file argument
+	// Handle schema generation flag
+	if *generateSchema {
+		return generateJSONSchema()
+	}
+
+	// Check for test spec file argument
 	if flags.NArg() == 0 {
-		return fmt.Errorf("missing file argument\nUsage: vcltest [options] <test-file.yaml|vcl-file>")
+		return fmt.Errorf("missing test spec file argument\nUsage: vcltest [options] <test-spec.yaml>")
 	}
 
-	inputFile := flags.Arg(0)
+	testSpecFile := flags.Arg(0)
 
-	// Determine if input is a test file (.yaml) or VCL file (.vcl)
-	if strings.HasSuffix(inputFile, ".yaml") || strings.HasSuffix(inputFile, ".yml") {
-		// Run tests
-		return runTests(ctx, inputFile, *verbose, *vclFileFlag, *debugDump)
+	// Run tests
+	return runTests(ctx, testSpecFile, *verbose, *vclFileFlag, *debugDump)
+}
+
+func generateJSONSchema() error {
+	reflector := jsonschema.Reflector{
+		DoNotReference: true,
+		ExpandedStruct: true,
 	}
 
-	// Otherwise, treat as VCL file (old behavior)
-	vclFile := inputFile
+	schema := reflector.Reflect(&testspec.TestSpec{})
+	schema.Title = "VCLTest Test Specification"
+	schema.Description = "Schema for VCLTest YAML test specification files"
+	schema.Version = "https://json-schema.org/draft/2020-12/schema"
 
-	// Check if VCL file exists
-	if _, err := os.Stat(vclFile); os.IsNotExist(err) {
-		return fmt.Errorf("VCL file %q does not exist", vclFile)
-	}
-
-	// Setup logger
-	logLevel := slog.LevelInfo
-	if *verbose {
-		logLevel = slog.LevelDebug
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel,
-	}))
-
-	// Load configuration
-	logger.Info("Loading configuration", "file", *configFile)
-	cfg, err := config.Load(*configFile)
+	output, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
-		return fmt.Errorf("loading configuration: %w", err)
+		return fmt.Errorf("marshaling schema: %w", err)
 	}
 
-	// Create service configuration
-	serviceCfg := &service.Config{
-		VarnishadmPort: cfg.VarnishadmPort,
-		Secret:         cfg.Secret,
-		VarnishCmd:     cfg.VarnishCmd,
-		VCLPath:        vclFile,
-		VarnishConfig: &varnish.Config{
-			WorkDir:     cfg.WorkDir,
-			VarnishDir:  cfg.VarnishDir,
-			StorageArgs: cfg.StorageArgs,
-			License: varnish.LicenseConfig{
-				Text: cfg.License.Text,
-				File: cfg.License.File,
-			},
-			Varnish: varnish.VarnishConfig{
-				AdminPort: cfg.Varnish.AdminPort,
-				HTTP:      convertHTTPConfig(cfg.Varnish.HTTP),
-				HTTPS:     convertHTTPSConfig(cfg.Varnish.HTTPS),
-				ExtraArgs: cfg.Varnish.ExtraArgs,
-			},
-		},
-		Logger: logger,
-	}
-
-	// Create service manager
-	manager, err := service.NewManager(serviceCfg)
-	if err != nil {
-		return fmt.Errorf("creating service manager: %w", err)
-	}
-
-	// Setup signal handling for graceful shutdown
-	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	// Start services
-	logger.Info("Starting vcltest services")
-	if err := manager.Start(ctx); err != nil {
-		if err == context.Canceled {
-			logger.Info("Services stopped gracefully")
-			return nil
-		}
-		return fmt.Errorf("service error: %w", err)
-	}
-
+	fmt.Println(string(output))
 	return nil
-}
-
-func convertHTTPConfig(configs []config.HTTPConfig) []varnish.HTTPConfig {
-	result := make([]varnish.HTTPConfig, len(configs))
-	for i, cfg := range configs {
-		result[i] = varnish.HTTPConfig{
-			Address: cfg.Address,
-			Port:    cfg.Port,
-		}
-	}
-	return result
-}
-
-func convertHTTPSConfig(configs []config.HTTPSConfig) []varnish.HTTPSConfig {
-	result := make([]varnish.HTTPSConfig, len(configs))
-	for i, cfg := range configs {
-		result[i] = varnish.HTTPSConfig{
-			Address: cfg.Address,
-			Port:    cfg.Port,
-		}
-	}
-	return result
 }
