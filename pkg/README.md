@@ -26,7 +26,7 @@ Captures varnishlog output in real-time during test execution, parsing and filte
 ### pkg/vclmod
 Parses and modifies VCL files using AST-based transformation to replace backend host and port addresses while validating that all test YAML backends exist in the VCL and warning about unused VCL backends. Handles VCL include directives while preserving structure and comments.
 
-### pkg/vcl
+### pkg/vclloader
 Provides VCL file loading and activation with support for includes, retrieves VCL-to-config mappings for trace analysis, and publishes events to coordinate the startup sequence. Includes a simple address parser for backend configuration.
 
 ## Testing Infrastructure
