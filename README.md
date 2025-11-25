@@ -1,6 +1,6 @@
 # VCLTest
 
-Unlike VTest2, which is made to test varnishd, this tool is made explicitly to test your VCL.
+A VCL testing tool.
 
 Development goals:
  * Performance, only compile the VCL one for each VCL to be tested
@@ -8,7 +8,7 @@ Development goals:
  * Reasonable, not perfect, isolation. Ban the cache between test.
  * Familiar or intuitive test syntax
 
-Write tests in YAML, see exactly which VCL lines are executed when tests fail.
+Tests are written in YAML. When tests fail, the tool shows which VCL lines were executed.
 
 ![VCLTest failure output showing VCL execution trace](examples/screenshot-failure.png)
 
@@ -86,27 +86,11 @@ expectations:
 
 ### JSON Schema for IDE Support
 
-VCLTest can generate a JSON Schema for the test specification format, enabling IDE autocomplete and validation:
+Generate a JSON Schema for IDE autocomplete and validation:
 
 ```bash
-# Generate schema to a file
 vcltest -generate-schema > testspec.schema.json
 ```
-
-**VS Code setup** (add to `.vscode/settings.json`):
-```json
-{
-  "yaml.schemas": {
-    "./testspec.schema.json": "*.yaml"
-  }
-}
-```
-
-**IntelliJ/PyCharm setup:**
-1. Go to Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
-2. Add new mapping with your schema file and `*.yaml` pattern
-
-This provides real-time validation, autocomplete, and inline documentation while editing test files.
 
 ### Basic Test
 
