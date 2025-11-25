@@ -535,3 +535,153 @@ func TestStop_NilServer(t *testing.T) {
 		t.Errorf("Stop() on unstarted backend error = %v, want nil", err)
 	}
 }
+
+func TestFailureMode_Failed(t *testing.T) {
+	backend := New(Config{
+		Status:      200,
+		FailureMode: "failed",
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Request should fail due to connection reset
+	resp, err := http.Get("http://" + addr + "/test")
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("Expected error due to connection reset, but request succeeded")
+	}
+
+	// Verify the call was still counted
+	if count := backend.GetCallCount(); count != 1 {
+		t.Errorf("Call count = %d, want 1 (even for failed requests)", count)
+	}
+}
+
+func TestFailureMode_CanBeUpdated(t *testing.T) {
+	backend := New(Config{
+		Status: 200,
+		Body:   "OK",
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// First request should succeed
+	resp, err := http.Get("http://" + addr)
+	if err != nil {
+		t.Fatalf("Initial request failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("Initial status = %d, want 200", resp.StatusCode)
+	}
+
+	// Update to failure mode
+	backend.UpdateConfig(Config{
+		FailureMode: "failed",
+	})
+
+	// Second request should fail
+	resp, err = http.Get("http://" + addr)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("Expected error after updating to failure mode, but request succeeded")
+	}
+
+	// Update back to normal mode
+	backend.UpdateConfig(Config{
+		Status: 201,
+		Body:   "Created",
+	})
+
+	// Third request should succeed again
+	resp, err = http.Get("http://" + addr)
+	if err != nil {
+		t.Fatalf("Request after reverting from failure mode failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 201 {
+		t.Errorf("Reverted status = %d, want 201", resp.StatusCode)
+	}
+}
+
+func TestFailureMode_Frozen(t *testing.T) {
+	backend := New(Config{
+		Status:      200,
+		FailureMode: "frozen",
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Create client with short timeout
+	client := &http.Client{
+		Timeout: 100 * time.Millisecond,
+	}
+
+	// Request should timeout (not complete)
+	_, err = client.Get("http://" + addr + "/test")
+	if err == nil {
+		t.Fatal("Expected timeout error, but request succeeded")
+	}
+
+	// Verify it's a timeout error (context deadline exceeded)
+	if !strings.Contains(err.Error(), "deadline") && !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("Expected timeout error, got: %v", err)
+	}
+
+	// Verify the call was still counted
+	if count := backend.GetCallCount(); count != 1 {
+		t.Errorf("Call count = %d, want 1", count)
+	}
+}
+
+func TestFailureMode_Frozen_UnblocksOnStop(t *testing.T) {
+	backend := New(Config{
+		Status:      200,
+		FailureMode: "frozen",
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Start a request in a goroutine (it will block)
+	done := make(chan struct{})
+	go func() {
+		// Use a client with no timeout - it should unblock when Stop() is called
+		client := &http.Client{}
+		_, _ = client.Get("http://" + addr + "/test")
+		close(done)
+	}()
+
+	// Give the request time to start and block
+	time.Sleep(50 * time.Millisecond)
+
+	// Stop should unblock the frozen handler
+	err = backend.Stop()
+	if err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	// Wait for the request goroutine to finish (with timeout)
+	select {
+	case <-done:
+		// Success - the goroutine unblocked
+	case <-time.After(1 * time.Second):
+		t.Fatal("Frozen handler did not unblock after Stop()")
+	}
+}

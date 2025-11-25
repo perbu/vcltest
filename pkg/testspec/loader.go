@@ -79,6 +79,14 @@ func validate(test *TestSpec) error {
 		if test.Expectations.Response.Status == 0 {
 			return fmt.Errorf("expectations.response.status is required")
 		}
+		if err := validateBackendSpec(test.Backend, "backend"); err != nil {
+			return err
+		}
+		for name, spec := range test.Backends {
+			if err := validateBackendSpec(spec, fmt.Sprintf("backends.%s", name)); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Validate scenario-based test
@@ -96,9 +104,23 @@ func validate(test *TestSpec) error {
 			if step.Expectations.Response.Status == 0 {
 				return fmt.Errorf("scenario step %d: expectations.response.status is required", i+1)
 			}
+			if err := validateBackendSpec(step.Backend, fmt.Sprintf("scenario step %d: backend", i+1)); err != nil {
+				return err
+			}
 		}
 	}
 
+	return nil
+}
+
+// validateBackendSpec validates a backend specification
+func validateBackendSpec(spec BackendSpec, context string) error {
+	switch spec.FailureMode {
+	case "", "failed", "frozen":
+		// Valid
+	default:
+		return fmt.Errorf("%s: invalid failure_mode %q, must be 'failed', 'frozen', or empty", context, spec.FailureMode)
+	}
 	return nil
 }
 

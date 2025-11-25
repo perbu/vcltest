@@ -127,9 +127,10 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 	if len(test.Backends) > 0 {
 		for name, spec := range test.Backends {
 			cfg := backend.Config{
-				Status:  spec.Status,
-				Headers: spec.Headers,
-				Body:    spec.Body,
+				Status:      spec.Status,
+				Headers:     spec.Headers,
+				Body:        spec.Body,
+				FailureMode: spec.FailureMode,
 			}
 			// Apply default status if not set
 			if cfg.Status == 0 {
@@ -169,9 +170,10 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 		}
 
 		cfg := backend.Config{
-			Status:  backendSpec.Status,
-			Headers: backendSpec.Headers,
-			Body:    backendSpec.Body,
+			Status:      backendSpec.Status,
+			Headers:     backendSpec.Headers,
+			Body:        backendSpec.Body,
+			FailureMode: backendSpec.FailureMode,
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
@@ -951,9 +953,10 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 
 				if mock, ok := r.mockBackends[backendName]; ok {
 					cfg := backend.Config{
-						Status:  step.Backend.Status,
-						Headers: step.Backend.Headers,
-						Body:    step.Backend.Body,
+						Status:      step.Backend.Status,
+						Headers:     step.Backend.Headers,
+						Body:        step.Backend.Body,
+						FailureMode: step.Backend.FailureMode,
 					}
 					// Apply default status if not set
 					if cfg.Status == 0 {

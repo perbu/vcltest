@@ -28,9 +28,10 @@ type RequestSpec struct {
 
 // BackendSpec defines the mock backend response
 type BackendSpec struct {
-	Status  int               `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers from backend"`
-	Body    string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content from backend"`
+	Status      int               `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
+	Headers     map[string]string `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers from backend"`
+	Body        string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content from backend"`
+	FailureMode string            `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
 }
 
 // ExpectationsSpec defines all test expectations (nested structure)

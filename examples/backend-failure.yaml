@@ -1,0 +1,24 @@
+name: Backend failure triggers vcl_backend_error
+request:
+  url: /api/data
+backend:
+  failure_mode: failed
+expectations:
+  response:
+    status: 503
+    body_contains: "Backend unavailable"
+  backend:
+    calls: 1
+
+---
+
+name: Normal request succeeds
+request:
+  url: /api/data
+backend:
+  status: 200
+  body: "API response"
+expectations:
+  response:
+    status: 200
+    body_contains: "API response"

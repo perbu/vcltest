@@ -10,24 +10,27 @@ import (
 
 // MockBackend is a simple HTTP server that returns configured responses
 type MockBackend struct {
-	server    *http.Server
-	listener  net.Listener
-	callCount atomic.Int32
-	config    Config
-	configMu  sync.RWMutex // Protects config field
+	server     *http.Server
+	listener   net.Listener
+	callCount  atomic.Int32
+	config     Config
+	configMu   sync.RWMutex  // Protects config field
+	shutdownCh chan struct{} // Closed on Stop() to unblock frozen handlers
 }
 
 // Config defines the mock backend response configuration
 type Config struct {
-	Status  int
-	Headers map[string]string
-	Body    string
+	Status      int
+	Headers     map[string]string
+	Body        string
+	FailureMode string // "failed" = connection reset, "frozen" = never responds, "" = normal
 }
 
 // New creates a new mock backend with the given configuration
 func New(config Config) *MockBackend {
 	return &MockBackend{
-		config: config,
+		config:     config,
+		shutdownCh: make(chan struct{}),
 	}
 }
 
@@ -64,7 +67,35 @@ func (m *MockBackend) handleRequest(w http.ResponseWriter, r *http.Request) {
 	status := m.config.Status
 	headers := m.config.Headers
 	body := m.config.Body
+	failureMode := m.config.FailureMode
 	m.configMu.RUnlock()
+
+	// Handle failure modes
+	switch failureMode {
+	case "frozen":
+		// Block until either backend is stopped or client disconnects
+		select {
+		case <-m.shutdownCh:
+		case <-r.Context().Done():
+		}
+		// Connection closes without response, triggering timeout in Varnish
+		return
+
+	case "failed":
+		// Hijack connection and close it immediately to simulate connection reset
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "hijacking not supported", http.StatusInternalServerError)
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		conn.Close()
+		return
+	}
 
 	// Set response headers
 	for key, value := range headers {
@@ -107,6 +138,14 @@ func (m *MockBackend) UpdateConfig(newConfig Config) {
 
 // Stop gracefully stops the mock backend
 func (m *MockBackend) Stop() error {
+	// Signal frozen handlers to unblock
+	select {
+	case <-m.shutdownCh:
+		// Already closed
+	default:
+		close(m.shutdownCh)
+	}
+
 	if m.server != nil {
 		return m.server.Close()
 	}

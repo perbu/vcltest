@@ -301,9 +301,10 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 	// Start a mock backend for each configuration
 	for name, spec := range backendConfigs {
 		cfg := backend.Config{
-			Status:  spec.Status,
-			Headers: spec.Headers,
-			Body:    spec.Body,
+			Status:      spec.Status,
+			Headers:     spec.Headers,
+			Body:        spec.Body,
+			FailureMode: spec.FailureMode,
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
