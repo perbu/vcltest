@@ -181,7 +181,7 @@ Parses YAML test specification files. Supports both single-request and scenario-
 - `ExpectationsSpec` - Nested test expectations structure containing:
   - `ResponseExpectations` - Response validation (status, headers, body_contains)
   - `BackendExpectations` - Backend interaction (calls, used)
-  - `CacheExpectations` - Cache behavior (hit, age_lt, age_gt, stale)
+  - `CacheExpectations` - Cache behavior (hit, age_lt, age_gt)
 
 **Backend specification:**
 
@@ -201,9 +201,9 @@ Parses YAML test specification files. Supports both single-request and scenario-
 
 - Parse YAML test files (supports multi-document YAML with `---`)
 - Validate test specification structure (single-request OR scenario)
-- Apply sensible defaults (GET method, 200 status, etc.)
+- Apply sensible defaults (GET method, 404 backend status, 200 expected response status)
 - Resolve VCL file path from CLI or test file name
-- Support cache-specific assertions (cached, age_lt, age_gt, stale) - Phase 2
+- Support cache-specific assertions (cached, age_lt, age_gt) - Phase 2
 - Support scenario-based temporal tests with time offsets - Phase 2
 - Return structured test definitions for runner
 
@@ -350,12 +350,10 @@ Cache expectations (optional):
 - Hit - Cache hit/miss detection via X-Varnish header
 - Age less than - Age header < N seconds
 - Age greater than - Age header > N seconds
-- Stale - Stale content detection via X-Varnish-Stale or Warning: 110
 
 **Helper functions:**
 
 - `checkIfCached()` - Detects cache hits using X-Varnish header format and Age header
-- `checkIfStale()` - Detects stale content via custom headers or HTTP warnings
 
 **Responsibilities:**
 
