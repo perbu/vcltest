@@ -565,46 +565,6 @@ func TestCheck_CacheExpectations(t *testing.T) {
 			expectErrorStr: "Age header is not a valid number",
 		},
 
-		// Stale expectations
-		{
-			name:     "stale expected via X-Varnish-Stale header",
-			cacheExp: &testspec.CacheExpectations{Stale: boolPtr(true)},
-			headers: http.Header{
-				"X-Varnish-Stale": []string{"1"},
-			},
-			expectPass: true,
-		},
-		{
-			name:     "stale expected via Warning 110",
-			cacheExp: &testspec.CacheExpectations{Stale: boolPtr(true)},
-			headers: http.Header{
-				"Warning": []string{"110 Response is Stale"},
-			},
-			expectPass: true,
-		},
-		{
-			name:           "stale expected but not stale",
-			cacheExp:       &testspec.CacheExpectations{Stale: boolPtr(true)},
-			headers:        http.Header{},
-			expectPass:     false,
-			expectErrorStr: "Stale: expected true, got false",
-		},
-		{
-			name:       "not stale expected and response is fresh",
-			cacheExp:   &testspec.CacheExpectations{Stale: boolPtr(false)},
-			headers:    http.Header{},
-			expectPass: true,
-		},
-		{
-			name:     "not stale expected but got stale",
-			cacheExp: &testspec.CacheExpectations{Stale: boolPtr(false)},
-			headers: http.Header{
-				"X-Varnish-Stale": []string{"1"},
-			},
-			expectPass:     false,
-			expectErrorStr: "Stale: expected false, got true",
-		},
-
 		// No cache expectations (nil)
 		{
 			name:       "nil cache expectations",

@@ -161,14 +161,6 @@ func checkCacheExpectations(exp *testspec.CacheExpectations, response *client.Re
 		}
 	}
 
-	if exp.Stale != nil {
-		isStale := checkIfStale(response)
-		if isStale != *exp.Stale {
-			result.Passed = false
-			result.Errors = append(result.Errors,
-				fmt.Sprintf("Stale: expected %v, got %v", *exp.Stale, isStale))
-		}
-	}
 }
 
 // checkIfCached determines if a response was served from cache
@@ -192,23 +184,6 @@ func checkIfCached(response *client.Response) bool {
 		if err == nil && age > 0 {
 			return true
 		}
-	}
-
-	return false
-}
-
-// checkIfStale determines if stale content was served
-// Checks for X-Varnish-Stale header or Warning: 110 header
-func checkIfStale(response *client.Response) bool {
-	// Check for X-Varnish-Stale header (custom header that VCL might set)
-	if response.Headers.Get("X-Varnish-Stale") != "" {
-		return true
-	}
-
-	// Check for Warning: 110 (Response is Stale)
-	warning := response.Headers.Get("Warning")
-	if strings.Contains(warning, "110") {
-		return true
 	}
 
 	return false
