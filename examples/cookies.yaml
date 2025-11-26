@@ -1,0 +1,32 @@
+name: Cookie jar persists cookies across scenario steps
+scenario:
+  - at: "0s"
+    request:
+      url: /set-shard
+    backends:
+      default:
+        status: 200
+        headers:
+          Set-Cookie: "shard=backend-a; Path=/"
+        body: "Shard cookie set"
+    expectations:
+      response:
+        status: 200
+      cookies:
+        shard: "backend-a"
+
+  - at: "1s"
+    request:
+      url: /use-shard
+    backends:
+      default:
+        status: 200
+        body: "Using shard"
+    expectations:
+      response:
+        status: 200
+        # VCL sees the cookie (automatically sent from jar) and sets this header
+        headers:
+          X-Shard-Received: "true"
+      cookies:
+        shard: "backend-a"

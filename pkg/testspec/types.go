@@ -25,12 +25,21 @@ type RequestSpec struct {
 	Body    string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Request body content"`
 }
 
+// RouteSpec defines response for a specific URL path
+type RouteSpec struct {
+	Status      int               `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
+	Headers     map[string]string `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers"`
+	Body        string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content"`
+	FailureMode string            `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
+}
+
 // BackendSpec defines the mock backend response
 type BackendSpec struct {
-	Status      int               `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
-	Headers     map[string]string `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers from backend"`
-	Body        string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content from backend"`
-	FailureMode string            `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
+	Status      int                  `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
+	Headers     map[string]string    `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers from backend"`
+	Body        string               `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content from backend"`
+	FailureMode string               `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
+	Routes      map[string]RouteSpec `yaml:"routes,omitempty" json:"routes,omitempty" jsonschema:"description=URL path to response mapping for path-based routing"`
 }
 
 // ExpectationsSpec defines all test expectations (nested structure)
@@ -38,6 +47,7 @@ type ExpectationsSpec struct {
 	Response ResponseExpectations `yaml:"response" json:"response" jsonschema:"required,description=Expected HTTP response from Varnish"`
 	Backend  *BackendExpectations `yaml:"backend,omitempty" json:"backend,omitempty" jsonschema:"description=Expected backend interaction"`
 	Cache    *CacheExpectations   `yaml:"cache,omitempty" json:"cache,omitempty" jsonschema:"description=Expected cache behavior"`
+	Cookies  map[string]string    `yaml:"cookies,omitempty" json:"cookies,omitempty" jsonschema:"description=Expected cookies in jar (name: value)"`
 }
 
 // ResponseExpectations validates what the client receives from Varnish

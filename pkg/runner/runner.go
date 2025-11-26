@@ -3,6 +3,9 @@ package runner
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,6 +23,23 @@ import (
 )
 
 var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]+`)
+
+// convertRoutes converts testspec routes to backend routes
+func convertRoutes(routes map[string]testspec.RouteSpec) map[string]backend.RouteConfig {
+	if routes == nil {
+		return nil
+	}
+	result := make(map[string]backend.RouteConfig, len(routes))
+	for path, spec := range routes {
+		result[path] = backend.RouteConfig{
+			Status:      spec.Status,
+			Headers:     spec.Headers,
+			Body:        spec.Body,
+			FailureMode: spec.FailureMode,
+		}
+	}
+	return result
+}
 
 // sanitizeVCLName converts a test name into a valid VCL name
 // Removes spaces and special characters, converts to lowercase
@@ -130,6 +150,7 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 			Headers:     spec.Headers,
 			Body:        spec.Body,
 			FailureMode: spec.FailureMode,
+			Routes:      convertRoutes(spec.Routes),
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
@@ -527,7 +548,7 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 
 	// Make HTTP request to Varnish
 	requestStart := time.Now()
-	response, err := client.MakeRequest(r.varnishURL, test.Request)
+	response, err := client.MakeRequest(nil, r.varnishURL, test.Request)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}
@@ -545,8 +566,8 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 	// Collect backend call counts
 	backendCalls := bm.getCallCounts()
 
-	// Check assertions
-	assertResult := assertion.Check(test.Expectations, response, backendCalls)
+	// Check assertions (no cookie jar for single-request tests)
+	assertResult := assertion.Check(test.Expectations, response, backendCalls, nil, nil)
 
 	// Prepare test result
 	result := &TestResult{
@@ -613,7 +634,7 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 
 	// Make HTTP request to Varnish
 	requestStart := time.Now()
-	response, err := client.MakeRequest(r.varnishURL, test.Request)
+	response, err := client.MakeRequest(nil, r.varnishURL, test.Request)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}
@@ -636,8 +657,8 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 		}
 	}
 
-	// Check assertions
-	assertResult := assertion.Check(test.Expectations, response, backendCalls)
+	// Check assertions (no cookie jar for single-request tests)
+	assertResult := assertion.Check(test.Expectations, response, backendCalls, nil, nil)
 
 	// Prepare test result
 	result := &TestResult{
@@ -757,6 +778,20 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 		r.logger.Warn("Failed to fetch VCL structure", "error", err)
 	}
 
+	// Create cookie jar for this scenario
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating cookie jar: %w", err)
+	}
+
+	// Create persistent HTTP client for this scenario
+	httpClient := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	// Execute scenario steps
 	var allErrors []string
 	var firstFailedStep int = -1
@@ -775,8 +810,8 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 
 		r.logger.Debug("Executing scenario step", "step", stepIdx+1, "at", step.At)
 
-		// Make HTTP request to Varnish
-		response, err := client.MakeRequest(r.varnishURL, step.Request)
+		// Make HTTP request to Varnish using persistent client with cookie jar
+		response, err := client.MakeRequest(httpClient, r.varnishURL, step.Request)
 		if err != nil {
 			return nil, fmt.Errorf("step %d: making request: %w", stepIdx+1, err)
 		}
@@ -791,8 +826,11 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 		// Collect backend call counts for this step
 		backendCalls := bm.getCallCounts()
 
+		// Build URL for cookie jar lookup
+		reqURL, _ := url.Parse(r.varnishURL + step.Request.URL)
+
 		// Check assertions for this step
-		assertResult := assertion.Check(step.Expectations, response, backendCalls)
+		assertResult := assertion.Check(step.Expectations, response, backendCalls, jar, reqURL)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {
@@ -855,6 +893,20 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 		return nil, fmt.Errorf("scenario-based tests require time controller to be set")
 	}
 
+	// Create cookie jar for this scenario
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating cookie jar: %w", err)
+	}
+
+	// Create persistent HTTP client for this scenario
+	httpClient := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	// Execute scenario steps
 	var allErrors []string
 	var firstFailedStep int = -1
@@ -880,6 +932,7 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 						Headers:     spec.Headers,
 						Body:        spec.Body,
 						FailureMode: spec.FailureMode,
+						Routes:      convertRoutes(spec.Routes),
 					}
 					// Apply default status if not set
 					if cfg.Status == 0 {
@@ -902,8 +955,8 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 			}
 		}
 
-		// Make HTTP request to Varnish
-		response, err := client.MakeRequest(r.varnishURL, step.Request)
+		// Make HTTP request to Varnish using persistent client with cookie jar
+		response, err := client.MakeRequest(httpClient, r.varnishURL, step.Request)
 		if err != nil {
 			return nil, fmt.Errorf("step %d: making request: %w", stepIdx+1, err)
 		}
@@ -923,8 +976,11 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 			}
 		}
 
+		// Build URL for cookie jar lookup
+		reqURL, _ := url.Parse(r.varnishURL + step.Request.URL)
+
 		// Check assertions for this step
-		assertResult := assertion.Check(step.Expectations, response, backendCalls)
+		assertResult := assertion.Check(step.Expectations, response, backendCalls, jar, reqURL)
 
 		if !assertResult.Passed {
 			if firstFailedStep == -1 {

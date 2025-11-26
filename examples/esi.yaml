@@ -1,0 +1,55 @@
+name: ESI include processing
+request:
+  url: /page
+backends:
+  default:
+    routes:
+      /page:
+        status: 200
+        headers:
+          Content-Type: "text/html"
+        body: |
+          <html>
+          <body>
+          Before ESI
+          <esi:include src="/fragment"/>
+          After ESI
+          </body>
+          </html>
+      /fragment:
+        status: 200
+        headers:
+          Content-Type: "text/html"
+        body: "INCLUDED_CONTENT"
+expectations:
+  response:
+    status: 200
+    body_contains: "INCLUDED_CONTENT"
+
+---
+
+name: ESI tags are removed from output
+request:
+  url: /page
+backends:
+  default:
+    routes:
+      /page:
+        status: 200
+        headers:
+          Content-Type: "text/html"
+        body: |
+          <html>
+          <body>
+          Before ESI
+          <esi:include src="/fragment"/>
+          After ESI
+          </body>
+          </html>
+      /fragment:
+        status: 200
+        body: "INCLUDED_CONTENT"
+expectations:
+  response:
+    status: 200
+    body_contains: "Before ESI"

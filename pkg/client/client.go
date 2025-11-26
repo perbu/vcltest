@@ -16,8 +16,10 @@ type Response struct {
 	Body    string
 }
 
-// MakeRequest makes an HTTP request to Varnish according to the test spec
-func MakeRequest(varnishURL string, req testspec.RequestSpec) (*Response, error) {
+// MakeRequest makes an HTTP request to Varnish according to the test spec.
+// If httpClient is nil, a default client is created (no cookie persistence).
+// Pass a client with a CookieJar for cookie persistence across requests.
+func MakeRequest(httpClient *http.Client, varnishURL string, req testspec.RequestSpec) (*Response, error) {
 	// Build full URL
 	url := varnishURL + req.URL
 
@@ -37,14 +39,17 @@ func MakeRequest(varnishURL string, req testspec.RequestSpec) (*Response, error)
 		httpReq.Header.Set(key, value)
 	}
 
-	// Make request
+	// Use provided client or create default
 	// Important: Don't follow redirects automatically - we want to test the redirect response itself
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	if httpClient == nil {
+		httpClient = &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
-	resp, err := client.Do(httpReq)
+
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}

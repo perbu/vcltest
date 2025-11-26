@@ -31,7 +31,7 @@ func TestCheck_BackendSimpleString(t *testing.T) {
 		"api_server": 1,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if !result.Passed {
 		t.Errorf("expected test to pass, got errors: %v", result.Errors)
 	}
@@ -59,7 +59,7 @@ func TestCheck_BackendSimpleString_NotCalled(t *testing.T) {
 		"api_server": 0,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if result.Passed {
 		t.Error("expected test to fail when backend was not called")
 	}
@@ -93,7 +93,7 @@ func TestCheck_BackendUsed(t *testing.T) {
 		"api_server": 2,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if !result.Passed {
 		t.Errorf("expected test to pass, got errors: %v", result.Errors)
 	}
@@ -123,7 +123,7 @@ func TestCheck_BackendCalls_TotalCount(t *testing.T) {
 		"web_server": 1,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if !result.Passed {
 		t.Errorf("expected test to pass, got errors: %v", result.Errors)
 	}
@@ -153,7 +153,7 @@ func TestCheck_BackendCalls_WrongCount(t *testing.T) {
 		"web_server": 1,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if result.Passed {
 		t.Error("expected test to fail when call count doesn't match")
 	}
@@ -184,7 +184,7 @@ func TestCheck_BackendPerBackend(t *testing.T) {
 		"web_server": 0,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if !result.Passed {
 		t.Errorf("expected test to pass, got errors: %v", result.Errors)
 	}
@@ -216,7 +216,7 @@ func TestCheck_BackendPerBackend_Mismatch(t *testing.T) {
 		"web_server": 0,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if result.Passed {
 		t.Error("expected test to fail when per-backend count doesn't match")
 	}
@@ -256,7 +256,7 @@ func TestCheck_BackendCacheHit_ZeroCalls(t *testing.T) {
 		"api_server": 0,
 	}
 
-	result := Check(expectations, response, backendCalls)
+	result := Check(expectations, response, backendCalls, nil, nil)
 	if !result.Passed {
 		t.Errorf("expected test to pass, got errors: %v", result.Errors)
 	}
@@ -404,7 +404,7 @@ func TestCheck_ResponseExpectations(t *testing.T) {
 				Response: tt.responseExp,
 			}
 
-			result := Check(expectations, tt.response, nil)
+			result := Check(expectations, tt.response, nil, nil, nil)
 
 			if tt.expectPass && !result.Passed {
 				t.Errorf("expected test to pass, got errors: %v", result.Errors)
@@ -629,7 +629,7 @@ func TestCheck_CacheExpectations(t *testing.T) {
 				Body:    "",
 			}
 
-			result := Check(expectations, response, nil)
+			result := Check(expectations, response, nil, nil, nil)
 
 			if tt.expectPass && !result.Passed {
 				t.Errorf("expected test to pass, got errors: %v", result.Errors)

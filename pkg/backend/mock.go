@@ -18,12 +18,21 @@ type MockBackend struct {
 	shutdownCh chan struct{} // Closed on Stop() to unblock frozen handlers
 }
 
+// RouteConfig defines response for a specific URL path
+type RouteConfig struct {
+	Status      int
+	Headers     map[string]string
+	Body        string
+	FailureMode string
+}
+
 // Config defines the mock backend response configuration
 type Config struct {
 	Status      int
 	Headers     map[string]string
 	Body        string
-	FailureMode string // "failed" = connection reset, "frozen" = never responds, "" = normal
+	FailureMode string                 // "failed" = connection reset, "frozen" = never responds, "" = normal
+	Routes      map[string]RouteConfig // URL path to response mapping
 }
 
 // New creates a new mock backend with the given configuration
@@ -57,18 +66,39 @@ func (m *MockBackend) Start() (string, error) {
 	return listener.Addr().String(), nil
 }
 
+// getRouteConfig returns the response config for a given path.
+// If the path matches a route, that route's config is returned.
+// Otherwise, the top-level config is returned as fallback.
+func (m *MockBackend) getRouteConfig(path string) RouteConfig {
+	// Check if path matches a route
+	if m.config.Routes != nil {
+		if route, ok := m.config.Routes[path]; ok {
+			return route
+		}
+	}
+	// Fallback to top-level config
+	return RouteConfig{
+		Status:      m.config.Status,
+		Headers:     m.config.Headers,
+		Body:        m.config.Body,
+		FailureMode: m.config.FailureMode,
+	}
+}
+
 // handleRequest handles incoming HTTP requests
 func (m *MockBackend) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Increment call counter
 	m.callCount.Add(1)
 
-	// Read config with lock
+	// Read config with lock, using path-based routing
 	m.configMu.RLock()
-	status := m.config.Status
-	headers := m.config.Headers
-	body := m.config.Body
-	failureMode := m.config.FailureMode
+	routeConfig := m.getRouteConfig(r.URL.Path)
 	m.configMu.RUnlock()
+
+	status := routeConfig.Status
+	headers := routeConfig.Headers
+	body := routeConfig.Body
+	failureMode := routeConfig.FailureMode
 
 	// Handle failure modes
 	switch failureMode {

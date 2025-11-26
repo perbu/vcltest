@@ -23,7 +23,7 @@ func TestMakeRequest_Success(t *testing.T) {
 		URL:    "/test",
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -64,7 +64,7 @@ func TestMakeRequest_WithHeaders(t *testing.T) {
 		},
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -103,7 +103,7 @@ func TestMakeRequest_WithBody(t *testing.T) {
 		Body:   `{"name":"test","value":123}`,
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -134,7 +134,7 @@ func TestMakeRequest_NoRedirect(t *testing.T) {
 		URL:    "/original",
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -180,7 +180,7 @@ func TestMakeRequest_DifferentMethods(t *testing.T) {
 				URL:    "/test",
 			}
 
-			resp, err := MakeRequest(server.URL, req)
+			resp, err := MakeRequest(nil, server.URL, req)
 			if err != nil {
 				t.Fatalf("MakeRequest() error = %v", err)
 			}
@@ -225,7 +225,7 @@ func TestMakeRequest_StatusCodes(t *testing.T) {
 				URL:    "/test",
 			}
 
-			resp, err := MakeRequest(server.URL, req)
+			resp, err := MakeRequest(nil, server.URL, req)
 			if err != nil {
 				t.Fatalf("MakeRequest() error = %v", err)
 			}
@@ -252,7 +252,7 @@ func TestMakeRequest_EmptyBody(t *testing.T) {
 		URL:    "/test",
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -277,7 +277,7 @@ func TestMakeRequest_LargeBody(t *testing.T) {
 		URL:    "/large",
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -306,7 +306,7 @@ func TestMakeRequest_URLConstruction(t *testing.T) {
 		URL:    "/api/v1/resource",
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}
@@ -323,7 +323,7 @@ func TestMakeRequest_ServerError(t *testing.T) {
 		URL:    "/test",
 	}
 
-	_, err := MakeRequest("http://localhost:1", req)
+	_, err := MakeRequest(nil, "http://localhost:1", req)
 	if err == nil {
 		t.Error("MakeRequest() expected error when server is not reachable")
 	}
@@ -349,7 +349,7 @@ func TestMakeRequest_MultipleHeaders(t *testing.T) {
 		URL:    "/test",
 	}
 
-	resp, err := MakeRequest(server.URL, req)
+	resp, err := MakeRequest(nil, server.URL, req)
 	if err != nil {
 		t.Fatalf("MakeRequest() error = %v", err)
 	}

@@ -2,6 +2,8 @@ package assertion
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -17,7 +19,8 @@ type Result struct {
 
 // Check verifies all expectations against actual results
 // backendCalls is a map of backend name -> call count
-func Check(expectations testspec.ExpectationsSpec, response *client.Response, backendCalls map[string]int) *Result {
+// cookieJar and requestURL are optional (can be nil) - used for cookie expectations in scenarios
+func Check(expectations testspec.ExpectationsSpec, response *client.Response, backendCalls map[string]int, cookieJar http.CookieJar, requestURL *url.URL) *Result {
 	result := &Result{
 		Passed: true,
 		Errors: []string{},
@@ -34,6 +37,11 @@ func Check(expectations testspec.ExpectationsSpec, response *client.Response, ba
 	// Cache expectations (optional)
 	if expectations.Cache != nil {
 		checkCacheExpectations(expectations.Cache, response, result)
+	}
+
+	// Cookie expectations (optional)
+	if len(expectations.Cookies) > 0 {
+		checkCookieExpectations(expectations.Cookies, cookieJar, requestURL, result)
 	}
 
 	return result
@@ -204,4 +212,39 @@ func checkIfStale(response *client.Response) bool {
 	}
 
 	return false
+}
+
+// checkCookieExpectations validates expected cookies against the cookie jar
+func checkCookieExpectations(expected map[string]string, jar http.CookieJar, requestURL *url.URL, result *Result) {
+	if jar == nil {
+		result.Passed = false
+		result.Errors = append(result.Errors, "cookie expectations specified but no cookie jar available")
+		return
+	}
+
+	if requestURL == nil {
+		result.Passed = false
+		result.Errors = append(result.Errors, "cookie expectations specified but no request URL available")
+		return
+	}
+
+	// Get cookies from jar for this URL
+	jarCookies := jar.Cookies(requestURL)
+	jarMap := make(map[string]string)
+	for _, c := range jarCookies {
+		jarMap[c.Name] = c.Value
+	}
+
+	// Check each expected cookie
+	for name, expectedValue := range expected {
+		if actualValue, ok := jarMap[name]; !ok {
+			result.Passed = false
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("cookie %q: expected in jar, but not present", name))
+		} else if actualValue != expectedValue {
+			result.Passed = false
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("cookie %q: expected %q, got %q", name, expectedValue, actualValue))
+		}
+	}
 }

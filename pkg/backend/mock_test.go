@@ -685,3 +685,255 @@ func TestFailureMode_Frozen_UnblocksOnStop(t *testing.T) {
 		t.Fatal("Frozen handler did not unblock after Stop()")
 	}
 }
+
+func TestRoutes_ExactPathMatch(t *testing.T) {
+	backend := New(Config{
+		Status: 404,
+		Body:   "Not Found",
+		Routes: map[string]RouteConfig{
+			"/api/users": {
+				Status: 200,
+				Body:   `{"users": []}`,
+			},
+			"/api/posts": {
+				Status: 200,
+				Body:   `{"posts": []}`,
+			},
+		},
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	tests := []struct {
+		path       string
+		wantStatus int
+		wantBody   string
+	}{
+		{"/api/users", 200, `{"users": []}`},
+		{"/api/posts", 200, `{"posts": []}`},
+		{"/api/other", 404, "Not Found"},
+		{"/", 404, "Not Found"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			resp, err := http.Get("http://" + addr + tt.path)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("Status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+
+			body, _ := io.ReadAll(resp.Body)
+			if string(body) != tt.wantBody {
+				t.Errorf("Body = %q, want %q", string(body), tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestRoutes_WithHeaders(t *testing.T) {
+	backend := New(Config{
+		Status: 200,
+		Routes: map[string]RouteConfig{
+			"/json": {
+				Status:  200,
+				Headers: map[string]string{"Content-Type": "application/json"},
+				Body:    `{}`,
+			},
+			"/html": {
+				Status:  200,
+				Headers: map[string]string{"Content-Type": "text/html"},
+				Body:    "<html></html>",
+			},
+		},
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Test JSON route
+	resp, err := http.Get("http://" + addr + "/json")
+	if err != nil {
+		t.Fatalf("Request to /json failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("/json Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	// Test HTML route
+	resp, err = http.Get("http://" + addr + "/html")
+	if err != nil {
+		t.Fatalf("Request to /html failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); ct != "text/html" {
+		t.Errorf("/html Content-Type = %q, want %q", ct, "text/html")
+	}
+}
+
+func TestRoutes_FailureMode(t *testing.T) {
+	backend := New(Config{
+		Status: 200,
+		Body:   "OK",
+		Routes: map[string]RouteConfig{
+			"/fail": {
+				FailureMode: "failed",
+			},
+		},
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Normal route should succeed
+	resp, err := http.Get("http://" + addr + "/normal")
+	if err != nil {
+		t.Fatalf("Request to /normal failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("/normal status = %d, want 200", resp.StatusCode)
+	}
+
+	// /fail route should fail with connection reset
+	resp, err = http.Get("http://" + addr + "/fail")
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("Expected error for /fail route, but request succeeded")
+	}
+}
+
+func TestRoutes_FallbackToTopLevel(t *testing.T) {
+	backend := New(Config{
+		Status:  418,
+		Headers: map[string]string{"X-Fallback": "true"},
+		Body:    "I'm a teapot",
+		Routes: map[string]RouteConfig{
+			"/coffee": {
+				Status: 200,
+				Body:   "Here's your coffee",
+			},
+		},
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Matched route
+	resp, err := http.Get("http://" + addr + "/coffee")
+	if err != nil {
+		t.Fatalf("Request to /coffee failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("/coffee status = %d, want 200", resp.StatusCode)
+	}
+	if string(body) != "Here's your coffee" {
+		t.Errorf("/coffee body = %q, want %q", string(body), "Here's your coffee")
+	}
+
+	// Unmatched route falls back to top-level config
+	resp, err = http.Get("http://" + addr + "/tea")
+	if err != nil {
+		t.Fatalf("Request to /tea failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 418 {
+		t.Errorf("/tea status = %d, want 418", resp.StatusCode)
+	}
+	if string(body) != "I'm a teapot" {
+		t.Errorf("/tea body = %q, want %q", string(body), "I'm a teapot")
+	}
+	if resp.Header.Get("X-Fallback") != "true" {
+		t.Errorf("/tea X-Fallback = %q, want %q", resp.Header.Get("X-Fallback"), "true")
+	}
+}
+
+func TestRoutes_UpdateConfigWithRoutes(t *testing.T) {
+	backend := New(Config{
+		Status: 200,
+		Body:   "Initial",
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Initial request
+	resp, err := http.Get("http://" + addr + "/page")
+	if err != nil {
+		t.Fatalf("Initial request failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if string(body) != "Initial" {
+		t.Errorf("Initial body = %q, want %q", string(body), "Initial")
+	}
+
+	// Update config with routes
+	backend.UpdateConfig(Config{
+		Status: 404,
+		Body:   "Not Found",
+		Routes: map[string]RouteConfig{
+			"/page": {
+				Status: 200,
+				Body:   "Page content",
+			},
+		},
+	})
+
+	// Request to /page should now use route
+	resp, err = http.Get("http://" + addr + "/page")
+	if err != nil {
+		t.Fatalf("Request after update failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("Updated /page status = %d, want 200", resp.StatusCode)
+	}
+	if string(body) != "Page content" {
+		t.Errorf("Updated /page body = %q, want %q", string(body), "Page content")
+	}
+
+	// Request to /other should use fallback
+	resp, err = http.Get("http://" + addr + "/other")
+	if err != nil {
+		t.Fatalf("Request to /other failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 404 {
+		t.Errorf("/other status = %d, want 404", resp.StatusCode)
+	}
+}

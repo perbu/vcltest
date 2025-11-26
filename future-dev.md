@@ -226,7 +226,7 @@ scenario:
 
 **Current State**:
 - `vcl_synth` responses already work (VCL can return synthetic responses)
-- `vcl_backend_error` requires backend failure modes
+  - `vcl_backend_error` requires backend failure modes 
 
 **Tasks**:
 

@@ -20,6 +20,23 @@ import (
 	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
+// convertRoutes converts testspec routes to backend routes
+func convertRoutes(routes map[string]testspec.RouteSpec) map[string]backend.RouteConfig {
+	if routes == nil {
+		return nil
+	}
+	result := make(map[string]backend.RouteConfig, len(routes))
+	for path, spec := range routes {
+		result[path] = backend.RouteConfig{
+			Status:      spec.Status,
+			Headers:     spec.Headers,
+			Body:        spec.Body,
+			FailureMode: spec.FailureMode,
+		}
+	}
+	return result
+}
+
 // runTests runs the test file
 func runTests(ctx context.Context, testFile string, verbose bool, cliVCL string, debugDump bool) error {
 	// Setup logger
@@ -297,6 +314,7 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 			Headers:     spec.Headers,
 			Body:        spec.Body,
 			FailureMode: spec.FailureMode,
+			Routes:      convertRoutes(spec.Routes),
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
