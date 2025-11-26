@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/perbu/vcltest/pkg/testspec/test-spec",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the test case"
+    },
+    "request": {
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "HEAD",
+            "PATCH",
+            "OPTIONS"
+          ],
+          "description": "HTTP method (default: GET)"
+        },
+        "url": {
+          "type": "string",
+          "description": "URL path to request (e.g. '/api/users')"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "HTTP request headers"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body content"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "description": "HTTP request specification for single-request tests"
+    },
+    "backends": {
+      "additionalProperties": {
+        "properties": {
+          "status": {
+            "type": "integer",
+            "maximum": 599,
+            "minimum": 100,
+            "description": "HTTP status code (default: 404)"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "description": "HTTP response headers from backend"
+          },
+          "body": {
+            "type": "string",
+            "description": "Response body content from backend"
+          },
+          "failure_mode": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "frozen"
+            ],
+            "description": "Backend failure simulation (failed=connection reset"
+          },
+          "routes": {
+            "additionalProperties": {
+              "properties": {
+                "status": {
+                  "type": "integer",
+                  "maximum": 599,
+                  "minimum": 100,
+                  "description": "HTTP status code (default: 404)"
+                },
+                "headers": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "description": "HTTP response headers"
+                },
+                "body": {
+                  "type": "string",
+                  "description": "Response body content"
+                },
+                "failure_mode": {
+                  "type": "string",
+                  "enum": [
+                    "failed",
+                    "frozen"
+                  ],
+                  "description": "Backend failure simulation (failed=connection reset"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "type": "object",
+            "description": "URL path to response mapping for path-based routing"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "type": "object",
+      "description": "Named backend response specifications"
+    },
+    "expectations": {
+      "properties": {
+        "response": {
+          "properties": {
+            "status": {
+              "type": "integer",
+              "maximum": 599,
+              "minimum": 100,
+              "description": "Expected HTTP status code"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "description": "Expected HTTP response headers"
+            },
+            "body_contains": {
+              "type": "string",
+              "description": "Substring that must appear in response body"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "description": "Expected HTTP response from Varnish"
+        },
+        "backend": {
+          "properties": {
+            "calls": {
+              "type": "integer",
+              "description": "Expected number of backend calls"
+            },
+            "used": {
+              "type": "string",
+              "description": "Name of backend that should be used"
+            },
+            "backends": {
+              "additionalProperties": {
+                "properties": {
+                  "calls": {
+                    "type": "integer",
+                    "description": "Expected number of calls to this backend"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "calls"
+                ]
+              },
+              "type": "object",
+              "description": "Per-backend call count expectations"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "Expected backend interaction"
+        },
+        "cache": {
+          "properties": {
+            "hit": {
+              "type": "boolean",
+              "description": "Whether response should be a cache hit (true) or miss (false)"
+            },
+            "age_gt": {
+              "type": "integer",
+              "description": "Age header must be greater than this value in seconds"
+            },
+            "age_lt": {
+              "type": "integer",
+              "description": "Age header must be less than this value in seconds"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "Expected cache behavior"
+        },
+        "cookies": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Expected cookies in jar (name: value)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "response"
+      ],
+      "description": "Test expectations for single-request tests"
+    },
+    "scenario": {
+      "items": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "pattern": "^[0-9]+(s|m|h)$",
+            "description": "Time offset from test start (e.g. '0s' '30s' '2m')"
+          },
+          "request": {
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "DELETE",
+                  "HEAD",
+                  "PATCH",
+                  "OPTIONS"
+                ],
+                "description": "HTTP method (default: GET)"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL path to request (e.g. '/api/users')"
+              },
+              "headers": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object",
+                "description": "HTTP request headers"
+              },
+              "body": {
+                "type": "string",
+                "description": "Request body content"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "description": "HTTP request to make at this step"
+          },
+          "backends": {
+            "additionalProperties": {
+              "properties": {
+                "status": {
+                  "type": "integer",
+                  "maximum": 599,
+                  "minimum": 100,
+                  "description": "HTTP status code (default: 404)"
+                },
+                "headers": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "description": "HTTP response headers from backend"
+                },
+                "body": {
+                  "type": "string",
+                  "description": "Response body content from backend"
+                },
+                "failure_mode": {
+                  "type": "string",
+                  "enum": [
+                    "failed",
+                    "frozen"
+                  ],
+                  "description": "Backend failure simulation (failed=connection reset"
+                },
+                "routes": {
+                  "additionalProperties": {
+                    "properties": {
+                      "status": {
+                        "type": "integer",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "HTTP status code (default: 404)"
+                      },
+                      "headers": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object",
+                        "description": "HTTP response headers"
+                      },
+                      "body": {
+                        "type": "string",
+                        "description": "Response body content"
+                      },
+                      "failure_mode": {
+                        "type": "string",
+                        "enum": [
+                          "failed",
+                          "frozen"
+                        ],
+                        "description": "Backend failure simulation (failed=connection reset"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "type": "object"
+                  },
+                  "type": "object",
+                  "description": "URL path to response mapping for path-based routing"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "type": "object",
+            "description": "Backend response overrides for this step"
+          },
+          "expectations": {
+            "properties": {
+              "response": {
+                "properties": {
+                  "status": {
+                    "type": "integer",
+                    "maximum": 599,
+                    "minimum": 100,
+                    "description": "Expected HTTP status code"
+                  },
+                  "headers": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object",
+                    "description": "Expected HTTP response headers"
+                  },
+                  "body_contains": {
+                    "type": "string",
+                    "description": "Substring that must appear in response body"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "description": "Expected HTTP response from Varnish"
+              },
+              "backend": {
+                "properties": {
+                  "calls": {
+                    "type": "integer",
+                    "description": "Expected number of backend calls"
+                  },
+                  "used": {
+                    "type": "string",
+                    "description": "Name of backend that should be used"
+                  },
+                  "backends": {
+                    "additionalProperties": {
+                      "properties": {
+                        "calls": {
+                          "type": "integer",
+                          "description": "Expected number of calls to this backend"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "calls"
+                      ]
+                    },
+                    "type": "object",
+                    "description": "Per-backend call count expectations"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "description": "Expected backend interaction"
+              },
+              "cache": {
+                "properties": {
+                  "hit": {
+                    "type": "boolean",
+                    "description": "Whether response should be a cache hit (true) or miss (false)"
+                  },
+                  "age_gt": {
+                    "type": "integer",
+                    "description": "Age header must be greater than this value in seconds"
+                  },
+                  "age_lt": {
+                    "type": "integer",
+                    "description": "Age header must be less than this value in seconds"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "description": "Expected cache behavior"
+              },
+              "cookies": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object",
+                "description": "Expected cookies in jar (name: value)"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "response"
+            ],
+            "description": "Test expectations for this step"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "at",
+          "expectations"
+        ]
+      },
+      "type": "array",
+      "description": "Multi-step temporal test scenario"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "title": "VCLTest Test Specification",
+  "description": "Schema for VCLTest YAML test specification files"
+}
