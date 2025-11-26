@@ -43,6 +43,9 @@ Provides an HTTP client for making test requests to Varnish with customizable me
 ### pkg/assertion
 Validates test expectations against actual HTTP responses by checking status codes, backend calls, headers, body content, cache state, age constraints, and staleness. Provides structured results with detailed error messages.
 
+### pkg/freeport
+Finds available TCP ports for dynamic port assignment, enabling parallel test execution by avoiding port conflicts between concurrent test harness instances.
+
 ## Output and Formatting
 
 ### pkg/formatter
