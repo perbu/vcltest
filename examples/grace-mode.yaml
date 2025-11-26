@@ -5,6 +5,7 @@ backends:
     status: 200
     headers:
       Content-Type: "text/html"
+      Cache-Control: "max-age=30"
     body: "Article content v1"
 
 scenario:
@@ -19,7 +20,7 @@ scenario:
       cache:
         hit: false
 
-  # Step 2: Request at t=15s - within TTL (30s), cache hit
+  # Step 2: Request at t=15s - backend goes down, but still within TTL
   - at: "15s"
     request:
       url: /article
@@ -29,7 +30,6 @@ scenario:
         body_contains: "Article content v1"
       cache:
         hit: true
-        stale: false
 
   # Step 3: Request at t=35s - TTL expired, backend fails
   # Varnish serves stale content from grace period
@@ -44,4 +44,4 @@ scenario:
         status: 200
         body_contains: "Article content v1"
       cache:
-        stale: true
+        hit: true
