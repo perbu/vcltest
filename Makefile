@@ -1,11 +1,15 @@
-.PHONY: build test clean
+.PHONY: build test clean schema
 
 # Default target
-build: vcltest
+build: vcltest schema
 
 # Build the vcltest binary
 vcltest: cmd/vcltest/*.go pkg/**/*.go
 	go build -o vcltest ./cmd/vcltest
+
+# Generate JSON schema
+schema: vcltest
+	./vcltest -generate-schema > schema.json
 
 # Run all tests
 test:
