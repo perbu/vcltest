@@ -13,6 +13,7 @@ import (
 	"github.com/perbu/vcltest/pkg/runner"
 	"github.com/perbu/vcltest/pkg/service"
 	"github.com/perbu/vcltest/pkg/testspec"
+	"github.com/perbu/vcltest/pkg/freeport"
 	"github.com/perbu/vcltest/pkg/varnish"
 	"github.com/perbu/vcltest/pkg/vclloader"
 )
@@ -25,6 +26,7 @@ type Harness struct {
 	// Runtime state
 	workDir        string
 	varnishDir     string
+	httpPort       int                            // Dynamically assigned HTTP port for Varnish
 	manager        *service.Manager
 	recorder       *recorder.Recorder
 	testRunner     *runner.Runner
@@ -179,9 +181,19 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 		return err
 	}
 
+	// Find a free port for HTTP (small race window, but acceptable for tests)
+	httpPort, err := freeport.FindFreePort("127.0.0.1")
+	if err != nil {
+		return fmt.Errorf("finding free HTTP port: %w", err)
+	}
+	h.httpPort = httpPort
+	h.logger.Debug("Using dynamic HTTP port", "port", httpPort)
+
 	// Create service configuration
+	// VarnishadmPort: 0 means "use any available port" (dynamic assignment)
+	// AdminPort: 0 will be updated by service.Manager after Listen()
 	serviceCfg := &service.Config{
-		VarnishadmPort: 6082,
+		VarnishadmPort: 0, // Dynamic port assignment
 		Secret:         "test-secret",
 		VarnishCmd:     "varnishd",
 		VCLPath:        emptyVCLPath,
@@ -190,9 +202,9 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 			VarnishDir: h.varnishDir,
 			VCLPath:    emptyVCLPath,
 			Varnish: varnish.VarnishConfig{
-				AdminPort: 6082,
+				AdminPort: 0, // Will be set by service.Manager
 				HTTP: []varnish.HTTPConfig{
-					{Address: "127.0.0.1", Port: 8080},
+					{Address: "127.0.0.1", Port: httpPort},
 				},
 				Time: varnish.TimeConfig{
 					Enabled: hasScenarioTests,
@@ -246,8 +258,9 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 	// Give varnishlog time to connect to VSM
 	time.Sleep(500 * time.Millisecond)
 
-	// Create test runner
-	h.testRunner = runner.New(varnishadm, "http://127.0.0.1:8080", h.workDir, h.logger, h.recorder)
+	// Create test runner with dynamic HTTP port
+	varnishURL := fmt.Sprintf("http://127.0.0.1:%d", h.httpPort)
+	h.testRunner = runner.New(varnishadm, varnishURL, h.workDir, h.logger, h.recorder)
 	h.testRunner.SetTimeController(h.manager)
 
 	return nil

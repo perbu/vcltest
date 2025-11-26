@@ -73,18 +73,23 @@ func (m *Manager) Start(ctx context.Context) error {
 	// Create error channel to receive errors from goroutines
 	errCh := make(chan error, 2)
 
-	// Start varnishadm server in a goroutine
-	m.logger.Debug("Starting varnishadm server", "port", m.config.VarnishadmPort)
+	// Create varnishadm listener first (this binds to the port immediately)
+	m.logger.Debug("Creating varnishadm listener", "requested_port", m.config.VarnishadmPort)
+	actualPort, err := m.varnishadm.Listen()
+	if err != nil {
+		return fmt.Errorf("varnishadm listen failed: %w", err)
+	}
+	m.logger.Debug("varnishadm listening", "port", actualPort)
+
+	// Update varnish config with actual admin port (important for dynamic port assignment)
+	m.config.VarnishConfig.Varnish.AdminPort = int(actualPort)
+
+	// Start varnishadm server in a goroutine (listener is already ready)
 	go func() {
 		if err := m.varnishadm.Run(ctx); err != nil {
 			errCh <- fmt.Errorf("varnishadm server failed: %w", err)
 		}
 	}()
-
-	// Give varnishadm a moment to start listening
-	// TODO: Consider implementing a proper health check instead of sleep
-	m.logger.Debug("Waiting for varnishadm to initialize")
-	time.Sleep(100 * time.Millisecond)
 
 	// Prepare varnish workspace (directories, secret file, license)
 	m.logger.Debug("Preparing varnish workspace")

@@ -48,7 +48,7 @@ func TestExamples(t *testing.T) {
 		testName := strings.TrimSuffix(yamlFile, ".yaml")
 
 		t.Run(testName, func(t *testing.T) {
-			// Note: Cannot run in parallel because harness uses fixed ports (6082, 8080)
+			t.Parallel() // Safe now that harness uses dynamic port assignment
 
 			// Determine if this test is expected to fail.
 			// Convention: files with "failing" in the name are expected to fail.

@@ -4,7 +4,15 @@ import "context"
 
 // VarnishadmInterface defines the interface for varnishadm implementations
 type VarnishadmInterface interface {
-	// Run starts the varnishadm server and blocks until context is cancelled
+	// Listen creates a TCP listener and returns the actual port.
+	// If the configured port is 0, a random available port is assigned.
+	// This must be called before Run().
+	Listen() (uint16, error)
+	// GetPort returns the port the server is listening on.
+	// Returns 0 if Listen() hasn't been called yet.
+	GetPort() uint16
+	// Run starts the varnishadm server and blocks until context is cancelled.
+	// Listen() must be called before Run().
 	Run(ctx context.Context) error
 	// Exec executes a command and returns the response
 	Exec(cmd string) (VarnishResponse, error)

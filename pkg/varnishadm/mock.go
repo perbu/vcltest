@@ -88,6 +88,26 @@ api      active  api.example.com  cert-002        2024-11-30 12:00:00       disa
 	}
 }
 
+// Listen simulates creating a listener for the mock server.
+// For the mock, this just returns the configured port (or a fake port if 0).
+func (m *MockVarnishadm) Listen() (uint16, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// If port is 0, assign a fake dynamic port for testing
+	if m.Port == 0 {
+		m.Port = 54321 // Fake port for mock
+	}
+	return uint16(m.Port), nil
+}
+
+// GetPort returns the port the mock server is configured to use.
+func (m *MockVarnishadm) GetPort() uint16 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return uint16(m.Port)
+}
+
 // Run simulates running the varnishadm server
 func (m *MockVarnishadm) Run(ctx context.Context) error {
 	m.mu.Lock()

@@ -27,10 +27,11 @@ type Server struct {
 	logger         *slog.Logger
 	broker         *broker.Broker
 	reqCh          chan varnishRequest
-	banner         string // Stores the Varnish CLI banner received on connection
-	bannerReceived bool   // Tracks if banner has been read for this connection
-	environment    string // Stores the environment line (e.g., "Darwin,24.6.0,arm64,-jnone,-smse4,-sdefault,-hcritbit")
-	version        string // Stores the Varnish version (e.g., "varnish-7.7.3")
+	listener       net.Listener // Listener for accepting connections (set by Listen())
+	banner         string       // Stores the Varnish CLI banner received on connection
+	bannerReceived bool         // Tracks if banner has been read for this connection
+	environment    string       // Stores the environment line (e.g., "Darwin,24.6.0,arm64,-jnone,-smse4,-sdefault,-hcritbit")
+	version        string       // Stores the Varnish version (e.g., "varnish-7.7.3")
 }
 
 // VarnishResponse is a type the maps the response
@@ -81,20 +82,50 @@ func New(port uint16, secret string, logger *slog.Logger, broker *broker.Broker)
 	}
 }
 
-// Run runs the server and waits for connections from varnishd - blocks
-func (v *Server) Run(ctx context.Context) error {
-	v.logger.Debug("Starting varnishadm server on localhost", "port", v.Port)
+// Listen creates a TCP listener on the configured port (or a random port if Port is 0).
+// Returns the actual port the listener is bound to.
+// This must be called before Run().
+func (v *Server) Listen() (uint16, error) {
+	if v.listener != nil {
+		return 0, errors.New("listener already exists; Listen() called twice?")
+	}
+
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", v.Port))
 	if err != nil {
-		return fmt.Errorf("net.Listen(port: %d): %w", v.Port, err)
+		return 0, fmt.Errorf("net.Listen(port: %d): %w", v.Port, err)
 	}
+
+	v.listener = l
+	actualPort := uint16(l.Addr().(*net.TCPAddr).Port)
+	v.Port = actualPort
+	v.logger.Debug("varnishadm listener created", "port", actualPort)
+
+	return actualPort, nil
+}
+
+// GetPort returns the port the server is listening on.
+// Returns 0 if Listen() hasn't been called yet.
+func (v *Server) GetPort() uint16 {
+	return v.Port
+}
+
+// Run runs the server and waits for connections from varnishd - blocks.
+// Listen() must be called before Run().
+func (v *Server) Run(ctx context.Context) error {
+	if v.listener == nil {
+		return errors.New("listener not initialized; call Listen() before Run()")
+	}
+
+	v.logger.Debug("Starting varnishadm server", "port", v.Port)
+
 	go func() {
 		<-ctx.Done()
-		_ = l.Close()
+		_ = v.listener.Close()
 	}()
-	defer l.Close()
+	defer v.listener.Close()
+
 	for {
-		conn, err := l.Accept()
+		conn, err := v.listener.Accept()
 		if err != nil {
 			select {
 			case <-ctx.Done():
