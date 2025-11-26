@@ -375,21 +375,29 @@ func (r *Runner) LoadVCL(vclPath string, backends map[string]vclloader.BackendAd
 // UnloadVCL cleans up the shared VCL
 func (r *Runner) UnloadVCL() error {
 	if r.loadedVCLName == "" {
+		r.logger.Debug("UnloadVCL: nothing to unload")
 		return nil // Nothing to unload
 	}
+
+	r.logger.Debug("UnloadVCL: switching to boot VCL", "current", r.loadedVCLName)
 
 	// Switch to boot VCL
 	if resp, err := r.varnishadm.VCLUse("boot"); err != nil {
 		r.logger.Warn("Failed to switch to boot VCL", "error", err)
 	} else if resp.StatusCode() != varnishadm.ClisOk {
 		r.logger.Warn("Failed to switch to boot VCL", "status", resp.StatusCode(), "response", resp.Payload())
+	} else {
+		r.logger.Debug("UnloadVCL: switched to boot VCL")
 	}
 
 	// Discard the shared VCL
+	r.logger.Debug("UnloadVCL: discarding shared VCL", "name", r.loadedVCLName)
 	if resp, err := r.varnishadm.VCLDiscard(r.loadedVCLName); err != nil {
 		r.logger.Warn("Failed to discard VCL", "vcl", r.loadedVCLName, "error", err)
 	} else if resp.StatusCode() != varnishadm.ClisOk {
 		r.logger.Warn("Failed to discard VCL", "vcl", r.loadedVCLName, "status", resp.StatusCode(), "response", resp.Payload())
+	} else {
+		r.logger.Debug("UnloadVCL: discarded shared VCL", "name", r.loadedVCLName)
 	}
 
 	r.loadedVCLName = ""
@@ -785,7 +793,12 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 	}
 
 	// Create persistent HTTP client for this scenario
+	// DisableKeepAlives ensures connections are closed after each request,
+	// allowing varnish to shut down cleanly.
 	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+		},
 		Jar: jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -900,7 +913,12 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 	}
 
 	// Create persistent HTTP client for this scenario
+	// DisableKeepAlives ensures connections are closed after each request,
+	// allowing varnish to shut down cleanly.
 	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+		},
 		Jar: jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse

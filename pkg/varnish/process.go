@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 )
 
@@ -123,6 +124,28 @@ func (m *Manager) Start(ctx context.Context, varnishCmd string, args []string, t
 	// Create the command, ctx lets us cancel and kill varnishd
 	cmd := exec.CommandContext(ctx, varnishCmd, args...)
 	cmd.Dir = m.varnishDir
+
+	// Start varnishd in its own process group so we can kill it and its child process together.
+	// Varnish has a manager/child architecture - the manager forks a child cache process.
+	// Without this, killing the manager orphans the child.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Go 1.20+ sends SIGINT by default on context cancel, but varnishd may not exit cleanly.
+	// Kill the entire process group to ensure both manager and child die.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			m.logger.Debug("No varnishd process to kill")
+			return nil
+		}
+		pgid := cmd.Process.Pid
+		m.logger.Debug("Killing varnishd process group", "pgid", pgid)
+		// Kill the entire process group (negative PID)
+		if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
+			m.logger.Error("Failed to kill varnishd process group", "error", err, "pgid", pgid)
+			return err
+		}
+		return nil
+	}
 
 	// Inherit environment variables so VMOD otel can read OTEL_* configuration
 	cmd.Env = os.Environ()

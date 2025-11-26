@@ -41,8 +41,13 @@ func MakeRequest(httpClient *http.Client, varnishURL string, req testspec.Reques
 
 	// Use provided client or create default
 	// Important: Don't follow redirects automatically - we want to test the redirect response itself
+	// Also disable keep-alive to ensure connections are closed after each request,
+	// which allows varnish to shut down cleanly.
 	if httpClient == nil {
 		httpClient = &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
