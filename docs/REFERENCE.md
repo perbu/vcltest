@@ -5,7 +5,7 @@ This document describes the YAML test specification format for VCLTest.
 For IDE autocompletion, add this to your YAML files:
 
 ```yaml
-# yaml-language-server: $schema=../schema.json
+# yaml-language-server: $schema=./schema.json
 ```
 
 ## Test Structure
@@ -354,4 +354,4 @@ expectations:
 
 ## Schema Reference
 
-For the complete machine-readable specification, see [`schema.json`](../schema.json).
+For the complete machine-readable specification, see [`schema.json`](./schema.json).

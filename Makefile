@@ -9,7 +9,7 @@ vcltest: cmd/vcltest/*.go pkg/**/*.go
 
 # Generate JSON schema
 schema: vcltest
-	./vcltest -generate-schema > schema.json
+	./vcltest -generate-schema > docs/schema.json
 
 # Run all tests
 test:

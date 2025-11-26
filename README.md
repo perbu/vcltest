@@ -79,12 +79,16 @@ expectations:
 
 ## Test Format
 
+For the complete YAML test format reference, see [`docs/REFERENCE.md`](docs/REFERENCE.md).
+
 ### JSON Schema for IDE Support
 
-Generate a JSON Schema for IDE autocomplete and validation:
+A JSON Schema for IDE autocomplete and validation is available at [`docs/schema.json`](docs/schema.json).
+
+To regenerate it:
 
 ```bash
-vcltest -generate-schema > testspec.schema.json
+vcltest -generate-schema > docs/schema.json
 ```
 
 ### Basic Test

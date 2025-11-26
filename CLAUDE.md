@@ -2,6 +2,7 @@
 
 This document provides terse descriptions of key packages in VCLTest. For overall project goals and usage,
 see [README.md](README.md). For a quick 2-4 line overview of each package, see [pkg/README.md](pkg/README.md).
+For the complete YAML test format reference, see [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## pkg/varnish
 
