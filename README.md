@@ -3,10 +3,11 @@
 A VCL testing tool.
 
 Development goals:
- * Performance, only compile the VCL one for each VCL to be tested
- * Time travel, you should be able to advance time
+ * High level test framework meant to test VCL logic, not HTTP protocol handling.
+ * Performance, only compile the VCL one for each VCL to be tested.
+ * Time travel, you should be able to advance time.
  * Reasonable, not perfect, isolation. Ban the cache between test.
- * Familiar or intuitive test syntax
+ * Familiar or intuitive test syntax.
 
 Tests are written in YAML. When tests fail, the tool shows which VCL lines were executed.
 
@@ -30,14 +31,8 @@ go build -o vcltest ./cmd/vcltest
 
 ```bash
 vcltest [options] <test-file.yaml>
-
-Options:
-  -v, -verbose       Enable verbose debug logging
-  -vclloader <path>        VCL file to use (overrides auto-detection)
-  -debug-dump        Preserve all artifacts in /tmp for debugging (no cleanup)
-  -generate-schema   Generate JSON Schema for test specification format
-  -version           Show version information
 ```
+Run `vcltest -help` for more options.
 
 ## Quick Start
 
