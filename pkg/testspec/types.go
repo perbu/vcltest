@@ -27,7 +27,7 @@ type RequestSpec struct {
 
 // RouteSpec defines response for a specific URL path
 type RouteSpec struct {
-	Status      int               `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
+	Status      int               `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 404),minimum=100,maximum=599"`
 	Headers     map[string]string `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers"`
 	Body        string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content"`
 	FailureMode string            `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
@@ -35,7 +35,7 @@ type RouteSpec struct {
 
 // BackendSpec defines the mock backend response
 type BackendSpec struct {
-	Status      int                  `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 200),minimum=100,maximum=599"`
+	Status      int                  `yaml:"status,omitempty" json:"status,omitempty" jsonschema:"description=HTTP status code (default: 404),minimum=100,maximum=599"`
 	Headers     map[string]string    `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers from backend"`
 	Body        string               `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content from backend"`
 	FailureMode string               `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
@@ -99,7 +99,6 @@ type CacheExpectations struct {
 	Hit   *bool `yaml:"hit,omitempty" json:"hit,omitempty" jsonschema:"description=Whether response should be a cache hit (true) or miss (false)"`
 	AgeGt *int  `yaml:"age_gt,omitempty" json:"age_gt,omitempty" jsonschema:"description=Age header must be greater than this value in seconds"`
 	AgeLt *int  `yaml:"age_lt,omitempty" json:"age_lt,omitempty" jsonschema:"description=Age header must be less than this value in seconds"`
-	Stale *bool `yaml:"stale,omitempty" json:"stale,omitempty" jsonschema:"description=Whether response should be stale content (true) or fresh (false)"`
 }
 
 // ApplyDefaults sets default values for optional fields
@@ -114,7 +113,7 @@ func (t *TestSpec) ApplyDefaults() {
 		// Backend defaults - apply to all backends in the map
 		for name, spec := range t.Backends {
 			if spec.Status == 0 {
-				spec.Status = 200
+				spec.Status = 404
 			}
 			if spec.Headers == nil {
 				spec.Headers = make(map[string]string)
@@ -136,7 +135,7 @@ func (t *TestSpec) ApplyDefaults() {
 			// Apply defaults to step-level backend overrides
 			for name, spec := range t.Scenario[i].Backends {
 				if spec.Status == 0 {
-					spec.Status = 200
+					spec.Status = 404
 				}
 				if spec.Headers == nil {
 					spec.Headers = make(map[string]string)
