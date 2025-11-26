@@ -305,6 +305,26 @@ func (h *Harness) loadVCL(vclPath string, backendAddresses map[string]vclloader.
 	return nil
 }
 
+// configureBackendsForTest updates mock backend configurations for a specific test.
+func (h *Harness) configureBackendsForTest(test testspec.TestSpec) {
+	for name, spec := range test.Backends {
+		if mock, ok := h.mockBackends[name]; ok {
+			cfg := backend.Config{
+				Status:      spec.Status,
+				Headers:     spec.Headers,
+				Body:        spec.Body,
+				FailureMode: spec.FailureMode,
+				Routes:      convertRoutes(spec.Routes),
+			}
+			if cfg.Status == 0 {
+				cfg.Status = 200
+			}
+			mock.UpdateConfig(cfg)
+			h.logger.Debug("Updated backend config for test", "backend", name, "test", test.Name, "failureMode", spec.FailureMode)
+		}
+	}
+}
+
 // runTests executes all tests and collects results.
 func (h *Harness) runTests(tests []testspec.TestSpec) *Result {
 	result := &Result{
@@ -327,6 +347,9 @@ func (h *Harness) runTests(tests []testspec.TestSpec) *Result {
 			})
 			continue
 		}
+
+		// Reconfigure backends for this specific test
+		h.configureBackendsForTest(test)
 
 		testResult, err := h.testRunner.RunTestWithSharedVCL(test)
 		if err != nil {
