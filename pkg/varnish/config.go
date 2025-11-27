@@ -22,7 +22,7 @@ func BuildArgs(cfg *Config) []string {
 	args = append(args, "-S", secretPath) // Enable auth on the CLI with secret file
 	args = append(args, "-M", fmt.Sprintf("localhost:%d", cfg.Varnish.AdminPort))
 	args = append(args, "-n", cfg.VarnishDir)
-	args = append(args, "-F") // Run in foreground
+	args = append(args, "-d") // Debug mode (implies -F, enables debug CLI commands like debug.listen_address)
 
 	// Add VCL file if specified, otherwise empty VCL will be loaded via varnishadm
 	if cfg.VCLPath != "" {
@@ -33,11 +33,16 @@ func BuildArgs(cfg *Config) []string {
 
 	// HTTP listening addresses
 	for _, http := range cfg.Varnish.HTTP {
-		if http.Address != "" {
-			args = append(args, "-a", fmt.Sprintf("%s:%d,http", http.Address, http.Port))
+		var listenSpec string
+		if http.Port == 0 {
+			// Dynamic port assignment - kernel will assign a free port
+			listenSpec = ":0,http"
+		} else if http.Address != "" {
+			listenSpec = fmt.Sprintf("%s:%d,http", http.Address, http.Port)
 		} else {
-			args = append(args, "-a", fmt.Sprintf(":%d,http", http.Port))
+			listenSpec = fmt.Sprintf(":%d,http", http.Port)
 		}
+		args = append(args, "-a", listenSpec)
 	}
 
 	// HTTPS listening addresses with TLS termination

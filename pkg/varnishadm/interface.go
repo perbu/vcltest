@@ -48,4 +48,8 @@ type VarnishadmInterface interface {
 	TLSCertCommit() (VarnishResponse, error)
 	TLSCertRollback() (VarnishResponse, error)
 	TLSCertReload() (VarnishResponse, error)
+
+	// Debug commands
+	DebugListenAddress() (VarnishResponse, error)
+	DebugListenAddressStructured() ([]ListenAddress, error)
 }

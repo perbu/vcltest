@@ -142,3 +142,21 @@ func (m *Manager) GetCacheStarter() *cache.Starter {
 func (m *Manager) AdvanceTimeBy(offset time.Duration) error {
 	return m.varnishManager.AdvanceTimeBy(offset)
 }
+
+// GetHTTPPort queries varnishd for the actual HTTP listen port.
+// This is useful when varnishd was started with -a :0 for dynamic port assignment.
+// Must be called after varnishd has connected and is accepting connections.
+func (m *Manager) GetHTTPPort() (int, error) {
+	addresses, err := m.varnishadm.DebugListenAddressStructured()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get listen addresses: %w", err)
+	}
+
+	// Find first HTTP (TCP) socket - port > 0 means TCP, -1 means Unix socket
+	for _, addr := range addresses {
+		if addr.Port > 0 {
+			return addr.Port, nil
+		}
+	}
+	return 0, fmt.Errorf("no HTTP listen address found in %d addresses", len(addresses))
+}

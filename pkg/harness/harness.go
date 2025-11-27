@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/perbu/vcltest/pkg/backend"
-	"github.com/perbu/vcltest/pkg/freeport"
 	"github.com/perbu/vcltest/pkg/recorder"
 	"github.com/perbu/vcltest/pkg/runner"
 	"github.com/perbu/vcltest/pkg/service"
@@ -181,17 +180,10 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 		return err
 	}
 
-	// Find a free port for HTTP (small race window, but acceptable for tests)
-	httpPort, err := freeport.FindFreePort("127.0.0.1")
-	if err != nil {
-		return fmt.Errorf("finding free HTTP port: %w", err)
-	}
-	h.httpPort = httpPort
-	h.logger.Debug("Using dynamic HTTP port", "port", httpPort)
-
 	// Create service configuration
 	// VarnishadmPort: 0 means "use any available port" (dynamic assignment)
 	// AdminPort: 0 will be updated by service.Manager after Listen()
+	// HTTP Port: 0 means kernel assigns port, discovered via debug.listen_address
 	serviceCfg := &service.Config{
 		VarnishadmPort: 0, // Dynamic port assignment
 		Secret:         "test-secret",
@@ -204,7 +196,7 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 			Varnish: varnish.VarnishConfig{
 				AdminPort: 0, // Will be set by service.Manager
 				HTTP: []varnish.HTTPConfig{
-					{Address: "127.0.0.1", Port: httpPort},
+					{Port: 0}, // Dynamic port - kernel assigns, we discover via debug.listen_address
 				},
 				Time: varnish.TimeConfig{
 					Enabled: hasScenarioTests,
@@ -230,14 +222,13 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 		}
 	}()
 
-	// Wait for services to be ready
+	// Wait for varnish to be ready and discover HTTP port
+	// debug.listen_address blocks until pool_accepting is true
 	h.logger.Debug("Waiting for Varnish to be ready...")
-	select {
-	case err := <-errChan:
-		return fmt.Errorf("varnish failed to start: %w", err)
-	case <-time.After(2 * time.Second):
-		// Services appear to be running, continue
+	if err := h.waitForVarnishReady(ctx, errChan); err != nil {
+		return err
 	}
+	h.logger.Debug("Discovered HTTP port", "port", h.httpPort)
 
 	// Get varnishadm interface
 	varnishadm := h.manager.GetVarnishadm()
@@ -258,12 +249,50 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 	// Give varnishlog time to connect to VSM
 	time.Sleep(500 * time.Millisecond)
 
-	// Create test runner with dynamic HTTP port
+	// Create test runner with discovered HTTP port
 	varnishURL := fmt.Sprintf("http://127.0.0.1:%d", h.httpPort)
 	h.testRunner = runner.New(varnishadm, varnishURL, h.workDir, h.logger, h.recorder)
 	h.testRunner.SetTimeController(h.manager)
 
 	return nil
+}
+
+// waitForVarnishReady waits for varnishd to be ready to accept HTTP connections.
+// It polls for varnishd crashes while waiting for debug.listen_address to succeed.
+// The debug.listen_address command blocks until pool_accepting is true.
+func (h *Harness) waitForVarnishReady(ctx context.Context, errChan <-chan error) error {
+	// Check for early crash before attempting to get port
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("varnish failed to start: %w", err)
+	case <-time.After(100 * time.Millisecond):
+		// Give varnishd a moment to crash if it's going to
+	}
+
+	// Now try to get the port - this blocks until varnish is ready
+	// Run in goroutine so we can still catch crashes
+	portChan := make(chan int, 1)
+	portErrChan := make(chan error, 1)
+	go func() {
+		port, err := h.manager.GetHTTPPort()
+		if err != nil {
+			portErrChan <- err
+		} else {
+			portChan <- port
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errChan:
+		return fmt.Errorf("varnish failed to start: %w", err)
+	case err := <-portErrChan:
+		return fmt.Errorf("failed to get HTTP port: %w", err)
+	case port := <-portChan:
+		h.httpPort = port
+		return nil
+	}
 }
 
 // findEmptyVCL locates the empty.vcl file needed for initial boot.

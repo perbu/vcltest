@@ -589,3 +589,104 @@ func TestCommands_StructuredMethods(t *testing.T) {
 		}
 	})
 }
+
+func TestParseListenAddresses(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		expected []ListenAddress
+		wantErr  bool
+	}{
+		{
+			name:    "single TCP socket",
+			payload: "a0 127.0.0.1 54321\n",
+			expected: []ListenAddress{
+				{Name: "a0", Address: "127.0.0.1", Port: 54321},
+			},
+		},
+		{
+			name:    "multiple TCP sockets",
+			payload: "http 0.0.0.0 8080\nhttps 0.0.0.0 8443\n",
+			expected: []ListenAddress{
+				{Name: "http", Address: "0.0.0.0", Port: 8080},
+				{Name: "https", Address: "0.0.0.0", Port: 8443},
+			},
+		},
+		{
+			name:    "Unix socket",
+			payload: "admin /tmp/varnish.sock -\n",
+			expected: []ListenAddress{
+				{Name: "admin", Address: "/tmp/varnish.sock", Port: -1},
+			},
+		},
+		{
+			name:    "mixed TCP and Unix",
+			payload: "a0 127.0.0.1 8080\nadmin /var/run/varnish.sock -\n",
+			expected: []ListenAddress{
+				{Name: "a0", Address: "127.0.0.1", Port: 8080},
+				{Name: "admin", Address: "/var/run/varnish.sock", Port: -1},
+			},
+		},
+		{
+			name:     "empty payload",
+			payload:  "",
+			expected: nil,
+		},
+		{
+			name:     "whitespace only",
+			payload:  "  \n  \n",
+			expected: nil,
+		},
+		{
+			name:    "handles CRLF",
+			payload: "a0 127.0.0.1 9999\r\n",
+			expected: []ListenAddress{
+				{Name: "a0", Address: "127.0.0.1", Port: 9999},
+			},
+		},
+		{
+			name:    "invalid field count",
+			payload: "a0 127.0.0.1\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid port number",
+			payload: "a0 127.0.0.1 notaport\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseListenAddresses(tt.payload)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(result) != len(tt.expected) {
+				t.Fatalf("got %d addresses, want %d", len(result), len(tt.expected))
+			}
+
+			for i, got := range result {
+				want := tt.expected[i]
+				if got.Name != want.Name {
+					t.Errorf("address[%d].Name = %q, want %q", i, got.Name, want.Name)
+				}
+				if got.Address != want.Address {
+					t.Errorf("address[%d].Address = %q, want %q", i, got.Address, want.Address)
+				}
+				if got.Port != want.Port {
+					t.Errorf("address[%d].Port = %d, want %d", i, got.Port, want.Port)
+				}
+			}
+		})
+	}
+}

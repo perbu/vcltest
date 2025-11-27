@@ -1,7 +1,7 @@
 vcl 4.1;
 
 backend default {
-    .host = "localhost";
+    .host = "default.example.com";
     .port = "8080";
 }
 

@@ -3,6 +3,7 @@ package varnishadm
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -224,4 +225,78 @@ func (v *Server) TLSCertReload() (VarnishResponse, error) {
 // BanNukeCache nukes the entire cache by issuing a ban that matches everything
 func (v *Server) BanNukeCache() (VarnishResponse, error) {
 	return v.Exec("ban req.url ~ .")
+}
+
+// Debug commands
+
+// DebugListenAddress returns the actual listen addresses bound by varnishd.
+// This is an undocumented debug command that waits until the acceptor is ready.
+// Output format: "<name> <address> <port>" for TCP, "<name> <path> -" for Unix sockets.
+func (v *Server) DebugListenAddress() (VarnishResponse, error) {
+	return v.Exec("debug.listen_address")
+}
+
+// ListenAddress represents a single listen socket bound by varnishd
+type ListenAddress struct {
+	Name    string // Socket name (e.g., "a0", "http", or custom from -a name=:port)
+	Address string // IP address (for TCP) or path (for Unix sockets)
+	Port    int    // Port number (-1 for Unix sockets)
+}
+
+// DebugListenAddressStructured returns parsed listen addresses.
+// This is useful for discovering dynamically assigned ports when using -a :0.
+func (v *Server) DebugListenAddressStructured() ([]ListenAddress, error) {
+	resp, err := v.DebugListenAddress()
+	if err != nil {
+		return nil, err
+	}
+	if resp.statusCode != ClisOk {
+		return nil, fmt.Errorf("debug.listen_address failed (status %d): %s",
+			resp.statusCode, resp.payload)
+	}
+	return parseListenAddresses(resp.payload)
+}
+
+// parseListenAddresses parses the debug.listen_address output.
+// Format: "<name> <address> <port>" per line (port is "-" for Unix sockets)
+func parseListenAddresses(payload string) ([]ListenAddress, error) {
+	var addresses []ListenAddress
+
+	lines := splitLines(payload)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			return nil, fmt.Errorf("invalid listen_address line: %q (expected 3 fields)", line)
+		}
+
+		addr := ListenAddress{
+			Name:    fields[0],
+			Address: fields[1],
+		}
+
+		if fields[2] == "-" {
+			// Unix socket
+			addr.Port = -1
+		} else {
+			port, err := strconv.Atoi(fields[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid port in listen_address: %q", fields[2])
+			}
+			addr.Port = port
+		}
+
+		addresses = append(addresses, addr)
+	}
+
+	return addresses, nil
+}
+
+// splitLines splits a string into lines, handling both \n and \r\n
+func splitLines(s string) []string {
+	return strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
 }

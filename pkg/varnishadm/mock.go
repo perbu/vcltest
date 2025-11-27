@@ -86,6 +86,11 @@ api      active  api.example.com  cert-002        2024-11-30 12:00:00       disa
 		statusCode: ClisOk,
 		payload:    "Backend name                   Admin      Probe      Health     Last change\nboot.default                   probe      Healthy    5/5        Wed, 22 Aug 2024 10:30:00 GMT",
 	}
+
+	m.responses["debug.listen_address"] = VarnishResponse{
+		statusCode: ClisOk,
+		payload:    "a0 127.0.0.1 8080\n",
+	}
 }
 
 // Listen simulates creating a listener for the mock server.
@@ -596,4 +601,24 @@ func (m *MockVarnishadm) GetTLSState() []TLSCertEntry {
 		certs = append(certs, cert)
 	}
 	return certs
+}
+
+// Debug commands
+
+// DebugListenAddress returns the mock listen addresses
+func (m *MockVarnishadm) DebugListenAddress() (VarnishResponse, error) {
+	return m.Exec("debug.listen_address")
+}
+
+// DebugListenAddressStructured returns parsed mock listen addresses
+func (m *MockVarnishadm) DebugListenAddressStructured() ([]ListenAddress, error) {
+	resp, err := m.DebugListenAddress()
+	if err != nil {
+		return nil, err
+	}
+	if resp.statusCode != ClisOk {
+		return nil, fmt.Errorf("debug.listen_address failed (status %d): %s",
+			resp.statusCode, resp.payload)
+	}
+	return parseListenAddresses(resp.payload)
 }
