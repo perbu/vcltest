@@ -31,6 +31,7 @@ type RouteSpec struct {
 	Headers     map[string]string `yaml:"headers,omitempty" json:"headers,omitempty" jsonschema:"description=HTTP response headers"`
 	Body        string            `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content"`
 	FailureMode string            `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
+	EchoRequest bool              `yaml:"echo_request,omitempty" json:"echo_request,omitempty" jsonschema:"description=Return the incoming request as JSON (for testing VCL request transformations)"`
 }
 
 // BackendSpec defines the mock backend response
@@ -40,6 +41,7 @@ type BackendSpec struct {
 	Body        string               `yaml:"body,omitempty" json:"body,omitempty" jsonschema:"description=Response body content from backend"`
 	FailureMode string               `yaml:"failure_mode,omitempty" json:"failure_mode,omitempty" jsonschema:"description=Backend failure simulation (failed=connection reset, frozen=never responds),enum=failed,enum=frozen"`
 	Routes      map[string]RouteSpec `yaml:"routes,omitempty" json:"routes,omitempty" jsonschema:"description=URL path to response mapping for path-based routing"`
+	EchoRequest bool                 `yaml:"echo_request,omitempty" json:"echo_request,omitempty" jsonschema:"description=Return the incoming request as JSON (for testing VCL request transformations)"`
 }
 
 // ExpectationsSpec defines all test expectations (nested structure)

@@ -937,3 +937,295 @@ func TestRoutes_UpdateConfigWithRoutes(t *testing.T) {
 		t.Errorf("/other status = %d, want 404", resp.StatusCode)
 	}
 }
+
+func TestEchoRequest_BasicFormat(t *testing.T) {
+	backend := New(Config{
+		EchoRequest: true,
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	resp, err := http.Get("http://" + addr + "/test/path")
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Echo should always return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("Status = %d, want 200", resp.StatusCode)
+	}
+
+	// Content-Type should be JSON
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	// Parse response body
+	body, _ := io.ReadAll(resp.Body)
+
+	// Verify JSON contains expected fields
+	if !strings.Contains(string(body), `"method":"GET"`) {
+		t.Errorf("Response should contain method, got: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"path":"/test/path"`) {
+		t.Errorf("Response should contain path, got: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"url":"/test/path"`) {
+		t.Errorf("Response should contain url, got: %s", string(body))
+	}
+}
+
+func TestEchoRequest_WithQueryParams(t *testing.T) {
+	backend := New(Config{
+		EchoRequest: true,
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	resp, err := http.Get("http://" + addr + "/search?q=test&page=1&page=2")
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// URL should include query string (& is JSON-encoded as \u0026)
+	if !strings.Contains(string(body), `/search?`) || !strings.Contains(string(body), `q=test`) {
+		t.Errorf("Response should contain full URL with query, got: %s", string(body))
+	}
+	// Path should not include query string
+	if !strings.Contains(string(body), `"path":"/search"`) {
+		t.Errorf("Response should contain path without query, got: %s", string(body))
+	}
+	// Query should be parsed as map
+	if !strings.Contains(string(body), `"query":{`) {
+		t.Errorf("Response should contain parsed query, got: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"q":["test"]`) {
+		t.Errorf("Response should contain q param, got: %s", string(body))
+	}
+	// page param has multiple values
+	if !strings.Contains(string(body), `"page":["1","2"]`) {
+		t.Errorf("Response should contain multiple page values, got: %s", string(body))
+	}
+}
+
+func TestEchoRequest_WithPostBody(t *testing.T) {
+	backend := New(Config{
+		EchoRequest: true,
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	reqBody := `{"name": "test", "value": 123}`
+	resp, err := http.Post("http://"+addr+"/api/data", "application/json", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// Method should be POST
+	if !strings.Contains(string(body), `"method":"POST"`) {
+		t.Errorf("Response should contain POST method, got: %s", string(body))
+	}
+	// Body should be echoed
+	if !strings.Contains(string(body), `"body":"{\"name\": \"test\", \"value\": 123}"`) {
+		t.Errorf("Response should contain request body, got: %s", string(body))
+	}
+}
+
+func TestEchoRequest_WithHeaders(t *testing.T) {
+	backend := New(Config{
+		EchoRequest: true,
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	req, _ := http.NewRequest("GET", "http://"+addr+"/test", nil)
+	req.Header.Set("X-Custom-Header", "custom-value")
+	req.Header.Set("Authorization", "Bearer token123")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// Headers should be echoed
+	if !strings.Contains(string(body), `"X-Custom-Header":["custom-value"]`) {
+		t.Errorf("Response should contain X-Custom-Header, got: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"Authorization":["Bearer token123"]`) {
+		t.Errorf("Response should contain Authorization header, got: %s", string(body))
+	}
+}
+
+func TestEchoRequest_RouteOverride(t *testing.T) {
+	backend := New(Config{
+		Status: 200,
+		Body:   "Normal response",
+		Routes: map[string]RouteConfig{
+			"/echo": {
+				EchoRequest: true,
+			},
+			"/normal": {
+				Status: 201,
+				Body:   "Created",
+			},
+		},
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// /echo route should echo the request
+	resp, err := http.Get("http://" + addr + "/echo")
+	if err != nil {
+		t.Fatalf("Request to /echo failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("/echo status = %d, want 200", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), `"method":"GET"`) {
+		t.Errorf("/echo should return echo response, got: %s", string(body))
+	}
+
+	// /normal route should return normal response
+	resp, err = http.Get("http://" + addr + "/normal")
+	if err != nil {
+		t.Fatalf("Request to /normal failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 201 {
+		t.Errorf("/normal status = %d, want 201", resp.StatusCode)
+	}
+	if string(body) != "Created" {
+		t.Errorf("/normal body = %q, want %q", string(body), "Created")
+	}
+
+	// Unmatched path should use top-level config (not echo)
+	resp, err = http.Get("http://" + addr + "/other")
+	if err != nil {
+		t.Fatalf("Request to /other failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("/other status = %d, want 200", resp.StatusCode)
+	}
+	if string(body) != "Normal response" {
+		t.Errorf("/other body = %q, want %q", string(body), "Normal response")
+	}
+}
+
+func TestEchoRequest_TopLevelEchoWithRouteOverride(t *testing.T) {
+	backend := New(Config{
+		EchoRequest: true, // Top-level echo enabled
+		Routes: map[string]RouteConfig{
+			"/normal": {
+				Status:      201,
+				Body:        "Normal response",
+				EchoRequest: false, // Route disables echo
+			},
+		},
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Unmatched path should echo (top-level echo)
+	resp, err := http.Get("http://" + addr + "/api/test")
+	if err != nil {
+		t.Fatalf("Request to /api/test failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("/api/test status = %d, want 200", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), `"method":"GET"`) {
+		t.Errorf("/api/test should echo, got: %s", string(body))
+	}
+
+	// /normal route should NOT echo (route override)
+	resp, err = http.Get("http://" + addr + "/normal")
+	if err != nil {
+		t.Fatalf("Request to /normal failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != 201 {
+		t.Errorf("/normal status = %d, want 201", resp.StatusCode)
+	}
+	if string(body) != "Normal response" {
+		t.Errorf("/normal body = %q, want %q", string(body), "Normal response")
+	}
+}
+
+func TestEchoRequest_CallCountStillWorks(t *testing.T) {
+	backend := New(Config{
+		EchoRequest: true,
+	})
+
+	addr, err := backend.Start()
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer backend.Stop()
+
+	// Initial count
+	if count := backend.GetCallCount(); count != 0 {
+		t.Errorf("Initial call count = %d, want 0", count)
+	}
+
+	// Make requests
+	for i := 0; i < 3; i++ {
+		resp, err := http.Get("http://" + addr + "/test")
+		if err != nil {
+			t.Fatalf("Request %d failed: %v", i+1, err)
+		}
+		resp.Body.Close()
+	}
+
+	// Call count should still work with echo mode
+	if count := backend.GetCallCount(); count != 3 {
+		t.Errorf("Call count after 3 requests = %d, want 3", count)
+	}
+}

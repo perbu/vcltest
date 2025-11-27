@@ -328,10 +328,4 @@ func TestGetTraceSummary(t *testing.T) {
 	if summary.BackendCalls != 2 {
 		t.Errorf("GetTraceSummary() BackendCalls = %d, want 2", summary.BackendCalls)
 	}
-	if len(summary.VCLCalls) != 1 || summary.VCLCalls[0] != "RECV" {
-		t.Errorf("GetTraceSummary() VCLCalls = %v, want [RECV]", summary.VCLCalls)
-	}
-	if len(summary.VCLReturns) != 1 || summary.VCLReturns[0] != "synth" {
-		t.Errorf("GetTraceSummary() VCLReturns = %v, want [synth]", summary.VCLReturns)
-	}
 }

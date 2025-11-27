@@ -99,6 +99,10 @@
                     "frozen"
                   ],
                   "description": "Backend failure simulation (failed=connection reset"
+                },
+                "echo_request": {
+                  "type": "boolean",
+                  "description": "Return the incoming request as JSON (for testing VCL request transformations)"
                 }
               },
               "additionalProperties": false,
@@ -106,6 +110,10 @@
             },
             "type": "object",
             "description": "URL path to response mapping for path-based routing"
+          },
+          "echo_request": {
+            "type": "boolean",
+            "description": "Return the incoming request as JSON (for testing VCL request transformations)"
           }
         },
         "additionalProperties": false,
@@ -310,6 +318,10 @@
                           "frozen"
                         ],
                         "description": "Backend failure simulation (failed=connection reset"
+                      },
+                      "echo_request": {
+                        "type": "boolean",
+                        "description": "Return the incoming request as JSON (for testing VCL request transformations)"
                       }
                     },
                     "additionalProperties": false,
@@ -317,6 +329,10 @@
                   },
                   "type": "object",
                   "description": "URL path to response mapping for path-based routing"
+                },
+                "echo_request": {
+                  "type": "boolean",
+                  "description": "Return the incoming request as JSON (for testing VCL request transformations)"
                 }
               },
               "additionalProperties": false,

@@ -68,26 +68,56 @@ func displayResults(result *harness.Result) {
 		} else {
 			// Display enhanced error output with VCL trace
 			if testResult.VCLTrace != nil && len(testResult.VCLTrace.Files) > 0 {
-				// Convert runner.VCLFileInfo to formatter.VCLFileInfo
-				var files []formatter.VCLFileInfo
+				// Check if we have block-level coverage data
+				hasBlocks := false
 				for _, f := range testResult.VCLTrace.Files {
-					files = append(files, formatter.VCLFileInfo{
-						ConfigID:      f.ConfigID,
-						Filename:      f.Filename,
-						Source:        f.Source,
-						ExecutedLines: f.ExecutedLines,
-					})
+					if f.Blocks != nil {
+						hasBlocks = true
+						break
+					}
 				}
 
-				output := formatter.FormatTestFailure(
-					testResult.TestName,
-					testResult.Errors,
-					files,
-					testResult.VCLTrace.BackendCalls,
-					testResult.VCLTrace.VCLFlow,
-					useColor,
-				)
-				fmt.Print(output)
+				if hasBlocks {
+					// Use new block-level coverage formatting
+					var files []formatter.VCLFileInfoWithBlocks
+					for _, f := range testResult.VCLTrace.Files {
+						files = append(files, formatter.VCLFileInfoWithBlocks{
+							ConfigID: f.ConfigID,
+							Filename: f.Filename,
+							Source:   f.Source,
+							Blocks:   f.Blocks,
+						})
+					}
+
+					output := formatter.FormatTestFailureWithBlocks(
+						testResult.TestName,
+						testResult.Errors,
+						files,
+						testResult.VCLTrace.BackendCalls,
+						useColor,
+					)
+					fmt.Print(output)
+				} else {
+					// Fallback to legacy line-based formatting
+					var files []formatter.VCLFileInfo
+					for _, f := range testResult.VCLTrace.Files {
+						files = append(files, formatter.VCLFileInfo{
+							ConfigID:      f.ConfigID,
+							Filename:      f.Filename,
+							Source:        f.Source,
+							ExecutedLines: f.ExecutedLines,
+						})
+					}
+
+					output := formatter.FormatTestFailure(
+						testResult.TestName,
+						testResult.Errors,
+						files,
+						testResult.VCLTrace.BackendCalls,
+						useColor,
+					)
+					fmt.Print(output)
+				}
 			} else {
 				// Fallback to simple error output if trace is not available
 				if useColor {

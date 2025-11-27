@@ -1,0 +1,56 @@
+# Echo Mode Examples
+# These tests verify VCL request transformations using echo_request
+
+name: VCL adds X-Forwarded-Proto header
+request:
+  url: /api/data
+backends:
+  default:
+    echo_request: true
+expectations:
+  response:
+    status: 200
+    body_contains: '"X-Forwarded-Proto":["https"]'
+
+---
+
+name: VCL rewrites URL prefix
+request:
+  url: /v1/users
+backends:
+  default:
+    echo_request: true
+expectations:
+  response:
+    status: 200
+    body_contains: '"path":"/api/v1/users"'
+
+---
+
+name: Echo mode shows POST body
+request:
+  url: /api/create
+  method: POST
+  body: '{"name": "test", "value": 123}'
+  headers:
+    Content-Type: "application/json"
+backends:
+  default:
+    echo_request: true
+expectations:
+  response:
+    status: 200
+    body_contains: '"method":"POST"'
+
+---
+
+name: Echo mode shows query parameters
+request:
+  url: /search?q=varnish&limit=10
+backends:
+  default:
+    echo_request: true
+expectations:
+  response:
+    status: 200
+    body_contains: '"q":["varnish"]'

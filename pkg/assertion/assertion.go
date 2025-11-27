@@ -66,8 +66,9 @@ func checkResponseExpectations(exp *testspec.ResponseExpectations, response *cli
 	if exp.BodyContains != "" {
 		if !strings.Contains(response.Body, exp.BodyContains) {
 			result.Passed = false
+			bodyPreview := truncateBody(response.Body, 500)
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Response body should contain %q, but doesn't", exp.BodyContains))
+				fmt.Sprintf("Response body should contain %q, but doesn't.\n  Actual body: %s", exp.BodyContains, bodyPreview))
 		}
 	}
 }
@@ -80,7 +81,7 @@ func checkBackendExpectations(exp *testspec.BackendExpectations, backendCalls ma
 		if !found || calls == 0 {
 			result.Passed = false
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Backend %q: expected to be called, but was not", exp.Name))
+				fmt.Sprintf("Backend %q: expected to be called, but was not.\n  Backends called: %s", exp.Name, formatBackendCalls(backendCalls)))
 		}
 		return
 	}
@@ -91,7 +92,7 @@ func checkBackendExpectations(exp *testspec.BackendExpectations, backendCalls ma
 		if !found || calls == 0 {
 			result.Passed = false
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Backend %q: expected to be called, but was not", exp.Used))
+				fmt.Sprintf("Backend %q: expected to be called, but was not.\n  Backends called: %s", exp.Used, formatBackendCalls(backendCalls)))
 		}
 	}
 
@@ -126,8 +127,10 @@ func checkCacheExpectations(exp *testspec.CacheExpectations, response *client.Re
 		isCached := checkIfCached(response)
 		if isCached != *exp.Hit {
 			result.Passed = false
+			xVarnish := response.Headers.Get("X-Varnish")
+			age := response.Headers.Get("Age")
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Cache hit: expected %v, got %v", *exp.Hit, isCached))
+				fmt.Sprintf("Cache hit: expected %v, got %v.\n  X-Varnish: %q, Age: %q", *exp.Hit, isCached, xVarnish, age))
 		}
 	}
 
@@ -187,6 +190,34 @@ func checkIfCached(response *client.Response) bool {
 	}
 
 	return false
+}
+
+// formatBackendCalls formats the backend call map for error messages
+func formatBackendCalls(calls map[string]int) string {
+	if len(calls) == 0 {
+		return "(none)"
+	}
+	var parts []string
+	for name, count := range calls {
+		if count > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", name, count))
+		}
+	}
+	if len(parts) == 0 {
+		return "(none)"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// truncateBody returns a truncated version of the body for error messages
+func truncateBody(body string, maxLen int) string {
+	if body == "" {
+		return "(empty)"
+	}
+	if len(body) <= maxLen {
+		return fmt.Sprintf("%q", body)
+	}
+	return fmt.Sprintf("%q... (truncated, %d bytes total)", body[:maxLen], len(body))
 }
 
 // checkCookieExpectations validates expected cookies against the cookie jar

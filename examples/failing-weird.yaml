@@ -1,0 +1,10 @@
+name: VCL adds X-Real-IP header
+request:
+  url: /test
+backends:
+  default:
+    echo_request: true
+expectations:
+  response:
+    status: 200
+    body_contains: '"X-Real-IP":["192.168.1.100"]'

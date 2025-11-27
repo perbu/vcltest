@@ -479,3 +479,7 @@ Event definitions for event-driven architecture (used by pkg/cache and pkg/vcl).
 - Define event types for pub/sub communication
 - Enable decoupled service coordination
 - Support event-driven startup sequence
+
+## VCL Trace Log Format
+
+See [docs/vcl_trace_spec.md](docs/vcl_trace_spec.md) for the VCL_trace log line format specification used by pkg/recorder for parsing execution traces.

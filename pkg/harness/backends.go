@@ -21,6 +21,7 @@ func convertRoutes(routes map[string]testspec.RouteSpec) map[string]backend.Rout
 			Headers:     spec.Headers,
 			Body:        spec.Body,
 			FailureMode: spec.FailureMode,
+			EchoRequest: spec.EchoRequest,
 		}
 	}
 	return result
@@ -60,6 +61,7 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 			Body:        spec.Body,
 			FailureMode: spec.FailureMode,
 			Routes:      convertRoutes(spec.Routes),
+			EchoRequest: spec.EchoRequest,
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
@@ -81,7 +83,7 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 
 		mockBackends[name] = mock
 		addresses[name] = vclloader.BackendAddress{Host: host, Port: port}
-		logger.Debug("Started shared backend", "name", name, "address", addr, "body_len", len(spec.Body))
+		logger.Debug("Started shared backend", "name", name, "address", addr, "body_len", len(spec.Body), "echo_request", spec.EchoRequest)
 	}
 
 	return addresses, mockBackends, nil

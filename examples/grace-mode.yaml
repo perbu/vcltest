@@ -20,7 +20,7 @@ scenario:
       cache:
         hit: false
 
-  # Step 2: Request at t=15s - backend goes down, but still within TTL
+  # Step 2: Request at t=15s - but still within TTL
   - at: "15s"
     request:
       url: /article

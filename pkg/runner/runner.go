@@ -15,6 +15,7 @@ import (
 	"github.com/perbu/vcltest/pkg/assertion"
 	"github.com/perbu/vcltest/pkg/backend"
 	"github.com/perbu/vcltest/pkg/client"
+	"github.com/perbu/vcltest/pkg/coverage"
 	"github.com/perbu/vcltest/pkg/recorder"
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnishadm"
@@ -36,6 +37,7 @@ func convertRoutes(routes map[string]testspec.RouteSpec) map[string]backend.Rout
 			Headers:     spec.Headers,
 			Body:        spec.Body,
 			FailureMode: spec.FailureMode,
+			EchoRequest: spec.EchoRequest,
 		}
 	}
 	return result
@@ -66,15 +68,15 @@ type TestResult struct {
 type VCLTraceInfo struct {
 	Files        []VCLFileInfo // VCL files with execution traces (main + includes)
 	BackendCalls int
-	VCLFlow      []string
 }
 
 // VCLFileInfo contains source and execution trace for a single VCL file
 type VCLFileInfo struct {
-	ConfigID      int    // Config ID from Varnish
-	Filename      string // Full path to VCL file
-	Source        string // VCL source code
-	ExecutedLines []int  // Lines that executed in this file
+	ConfigID      int                  // Config ID from Varnish
+	Filename      string               // Full path to VCL file
+	Source        string               // VCL source code
+	ExecutedLines []int                // Lines that executed in this file (legacy, for backward compat)
+	Blocks        *coverage.FileBlocks // Block-level coverage analysis (new)
 }
 
 // TimeController interface for time manipulation in tests
@@ -151,6 +153,7 @@ func (r *Runner) startBackends(test testspec.TestSpec) (*backendManager, map[str
 			Body:        spec.Body,
 			FailureMode: spec.FailureMode,
 			Routes:      convertRoutes(spec.Routes),
+			EchoRequest: spec.EchoRequest,
 		}
 		// Apply default status if not set
 		if cfg.Status == 0 {
@@ -251,6 +254,7 @@ func (r *Runner) replaceBackendsInVCL(vclContent string, vclPath string, backend
 
 // extractVCLFiles converts VCLShowResult entries into VCLFileInfo with execution traces
 // Uses varnishd's native config ID mapping from vcl.show -v
+// Now includes block-level coverage analysis using the coverage package
 func (r *Runner) extractVCLFiles(vclShow *varnishadm.VCLShowResult, execByConfig map[int][]int) []VCLFileInfo {
 	var files []VCLFileInfo
 
@@ -260,11 +264,65 @@ func (r *Runner) extractVCLFiles(vclShow *varnishadm.VCLShowResult, execByConfig
 			continue
 		}
 
+		executedLines := execByConfig[entry.ConfigID]
+
+		// Debug: log traced lines
+		r.logger.Debug("VCL trace lines for config",
+			"config", entry.ConfigID,
+			"file", entry.Filename,
+			"traced_lines", executedLines)
+
+		// Perform block-level analysis
+		var blocks *coverage.FileBlocks
+		fb, err := coverage.AnalyzeVCL(entry.Source, entry.Filename)
+		if err != nil {
+			r.logger.Warn("Failed to analyze VCL for block coverage",
+				"file", entry.Filename, "error", err)
+		} else {
+			// Debug: log block structure before matching
+			for _, b := range fb.Blocks {
+				r.logger.Debug("Block found",
+					"type", b.Type,
+					"name", b.Name,
+					"header_line", b.HeaderLine,
+					"open_brace", b.OpenBrace,
+					"close_brace", b.CloseBrace)
+				for _, c := range b.Children {
+					r.logger.Debug("  Child block",
+						"type", c.Type,
+						"name", c.Name,
+						"header_line", c.HeaderLine,
+						"open_brace", c.OpenBrace,
+						"close_brace", c.CloseBrace)
+				}
+			}
+
+			// Match traced lines to blocks
+			coverage.MatchTracesToBlocks(fb, executedLines)
+			fb.ConfigID = entry.ConfigID
+
+			// Debug: log match results
+			for _, b := range fb.Blocks {
+				r.logger.Debug("Block coverage result",
+					"type", b.Type,
+					"name", b.Name,
+					"entered", b.Entered)
+				for _, c := range b.Children {
+					r.logger.Debug("  Child coverage result",
+						"type", c.Type,
+						"entered", c.Entered)
+				}
+			}
+
+			blocks = fb
+		}
+
 		files = append(files, VCLFileInfo{
 			ConfigID:      entry.ConfigID,
 			Filename:      entry.Filename,
 			Source:        entry.Source, // Use pre-parsed source from VCLConfigEntry
-			ExecutedLines: execByConfig[entry.ConfigID],
+			ExecutedLines: executedLines,
+			Blocks:        blocks,
 		})
 	}
 
@@ -600,7 +658,6 @@ func (r *Runner) runSingleRequestTest(test testspec.TestSpec, vclPath string) (*
 			result.VCLTrace = &VCLTraceInfo{
 				Files:        files,
 				BackendCalls: summary.BackendCalls,
-				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}
@@ -691,7 +748,6 @@ func (r *Runner) runSingleRequestTestWithSharedVCL(test testspec.TestSpec) (*Tes
 			result.VCLTrace = &VCLTraceInfo{
 				Files:        files,
 				BackendCalls: summary.BackendCalls,
-				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}
@@ -879,7 +935,6 @@ func (r *Runner) runScenarioTest(test testspec.TestSpec, vclPath string) (*TestR
 			result.VCLTrace = &VCLTraceInfo{
 				Files:        files,
 				BackendCalls: summary.BackendCalls,
-				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}
@@ -951,6 +1006,7 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 						Body:        spec.Body,
 						FailureMode: spec.FailureMode,
 						Routes:      convertRoutes(spec.Routes),
+						EchoRequest: spec.EchoRequest,
 					}
 					// Apply default status if not set
 					if cfg.Status == 0 {
@@ -1033,7 +1089,6 @@ func (r *Runner) runScenarioTestWithSharedVCL(test testspec.TestSpec) (*TestResu
 			result.VCLTrace = &VCLTraceInfo{
 				Files:        files,
 				BackendCalls: summary.BackendCalls,
-				VCLFlow:      append(summary.VCLCalls, summary.VCLReturns...),
 			}
 		}
 	}

@@ -1043,7 +1043,6 @@ func TestTestResult_Structure(t *testing.T) {
 				},
 			},
 			BackendCalls: 2,
-			VCLFlow:      []string{"vcl_recv", "vcl_backend_fetch"},
 		},
 	}
 

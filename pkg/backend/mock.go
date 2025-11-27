@@ -1,7 +1,9 @@
 package backend
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -24,6 +26,7 @@ type RouteConfig struct {
 	Headers     map[string]string
 	Body        string
 	FailureMode string
+	EchoRequest bool
 }
 
 // Config defines the mock backend response configuration
@@ -33,6 +36,7 @@ type Config struct {
 	Body        string
 	FailureMode string                 // "failed" = connection reset, "frozen" = never responds, "" = normal
 	Routes      map[string]RouteConfig // URL path to response mapping
+	EchoRequest bool                   // Return incoming request as JSON
 }
 
 // New creates a new mock backend with the given configuration
@@ -82,7 +86,18 @@ func (m *MockBackend) getRouteConfig(path string) RouteConfig {
 		Headers:     m.config.Headers,
 		Body:        m.config.Body,
 		FailureMode: m.config.FailureMode,
+		EchoRequest: m.config.EchoRequest,
 	}
+}
+
+// EchoResponse is the JSON structure returned when echo_request is enabled
+type EchoResponse struct {
+	Method  string              `json:"method"`
+	URL     string              `json:"url"`
+	Path    string              `json:"path"`
+	Query   map[string][]string `json:"query"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
 }
 
 // handleRequest handles incoming HTTP requests
@@ -94,6 +109,23 @@ func (m *MockBackend) handleRequest(w http.ResponseWriter, r *http.Request) {
 	m.configMu.RLock()
 	routeConfig := m.getRouteConfig(r.URL.Path)
 	m.configMu.RUnlock()
+
+	// Handle echo mode - returns the incoming request as JSON
+	if routeConfig.EchoRequest {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		echo := EchoResponse{
+			Method:  r.Method,
+			URL:     r.URL.String(),
+			Path:    r.URL.Path,
+			Query:   r.URL.Query(),
+			Headers: r.Header,
+			Body:    string(bodyBytes),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(echo)
+		return
+	}
 
 	status := routeConfig.Status
 	headers := routeConfig.Headers

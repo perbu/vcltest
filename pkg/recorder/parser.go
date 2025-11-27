@@ -161,30 +161,15 @@ type VCLTraceSummary struct {
 	ExecutedLines []int
 	BackendCalls  int
 	BackendsUsed  []string // Names of backends that were called
-	VCLCalls      []string
-	VCLReturns    []string
 }
 
 // GetTraceSummary analyzes messages and returns execution summary
 func GetTraceSummary(messages []Message) VCLTraceSummary {
-	summary := VCLTraceSummary{
+	return VCLTraceSummary{
 		ExecutedLines: GetExecutedLines(messages),
 		BackendCalls:  CountBackendCalls(messages),
 		BackendsUsed:  GetBackendsUsed(messages),
-		VCLCalls:      make([]string, 0),
-		VCLReturns:    make([]string, 0),
 	}
-
-	for _, msg := range messages {
-		switch msg.Type {
-		case MessageTypeVCLCall:
-			summary.VCLCalls = append(summary.VCLCalls, msg.Content)
-		case MessageTypeVCLReturn:
-			summary.VCLReturns = append(summary.VCLReturns, msg.Content)
-		}
-	}
-
-	return summary
 }
 
 // FormatVCLTrace formats a VCL trace for display

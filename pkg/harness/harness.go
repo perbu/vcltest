@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/perbu/vcltest/pkg/backend"
+	"github.com/perbu/vcltest/pkg/freeport"
 	"github.com/perbu/vcltest/pkg/recorder"
 	"github.com/perbu/vcltest/pkg/runner"
 	"github.com/perbu/vcltest/pkg/service"
 	"github.com/perbu/vcltest/pkg/testspec"
-	"github.com/perbu/vcltest/pkg/freeport"
 	"github.com/perbu/vcltest/pkg/varnish"
 	"github.com/perbu/vcltest/pkg/vclloader"
 )
@@ -26,7 +26,7 @@ type Harness struct {
 	// Runtime state
 	workDir        string
 	varnishDir     string
-	httpPort       int                            // Dynamically assigned HTTP port for Varnish
+	httpPort       int // Dynamically assigned HTTP port for Varnish
 	manager        *service.Manager
 	recorder       *recorder.Recorder
 	testRunner     *runner.Runner
@@ -328,12 +328,13 @@ func (h *Harness) configureBackendsForTest(test testspec.TestSpec) {
 				Body:        spec.Body,
 				FailureMode: spec.FailureMode,
 				Routes:      convertRoutes(spec.Routes),
+				EchoRequest: spec.EchoRequest,
 			}
 			if cfg.Status == 0 {
 				cfg.Status = 200
 			}
 			mock.UpdateConfig(cfg)
-			h.logger.Debug("Updated backend config for test", "backend", name, "test", test.Name, "failureMode", spec.FailureMode)
+			h.logger.Debug("Updated backend config for test", "backend", name, "test", test.Name, "failureMode", spec.FailureMode, "echoRequest", spec.EchoRequest)
 		}
 	}
 }
