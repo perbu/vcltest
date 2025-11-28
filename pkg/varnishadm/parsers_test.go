@@ -351,9 +351,9 @@ func TestParseParenthesesContent(t *testing.T) {
 func TestParseVCLShow(t *testing.T) {
 	// Define content with exact byte counts
 	// Note: Each file's content immediately follows its header (no blank line between)
-	mainVCL := "vcl 4.1;\n\nsub vcl_recv {\n    return (pass);\n}\n"       // 46 bytes
+	mainVCL := "vcl 4.1;\n\nsub vcl_recv {\n    return (pass);\n}\n"     // 46 bytes
 	includedVCL := "sub my_sub {\n    set req.http.X-Test = \"1\";\n}\n" // 46 bytes
-	builtinVCL := "#- builtin VCL\n"                                      // 15 bytes
+	builtinVCL := "#- builtin VCL\n"                                     // 15 bytes
 
 	tests := []struct {
 		name     string
@@ -376,6 +376,7 @@ func TestParseVCLShow(t *testing.T) {
 				ConfigMap: map[int]string{
 					0: "/etc/varnish/main.vcl",
 					1: "/etc/varnish/included.vcl",
+					2: "<builtin>",
 				},
 				VCLSource: mainVCL + includedVCL + builtinVCL,
 			},
@@ -392,6 +393,7 @@ func TestParseVCLShow(t *testing.T) {
 				},
 				ConfigMap: map[int]string{
 					0: "/etc/varnish/default.vcl",
+					1: "<builtin>",
 				},
 				VCLSource: mainVCL + builtinVCL,
 			},
@@ -407,6 +409,7 @@ func TestParseVCLShow(t *testing.T) {
 				},
 				ConfigMap: map[int]string{
 					0: "/etc/varnish/empty.vcl",
+					1: "<builtin>",
 				},
 				VCLSource: builtinVCL,
 			},

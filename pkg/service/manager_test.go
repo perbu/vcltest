@@ -129,14 +129,28 @@ func TestManagerStartContextCancellation(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	workDir := t.TempDir()
 
+	// Create a minimal VCL file for the test
+	vclDir := workDir + "/vcl"
+	if err := os.MkdirAll(vclDir, 0755); err != nil {
+		t.Fatalf("Failed to create vcl directory: %v", err)
+	}
+	vclPath := vclDir + "/test.vcl"
+	vclContent := `vcl 4.1;
+backend default { .host = "127.0.0.1"; .port = "8080"; }
+`
+	if err := os.WriteFile(vclPath, []byte(vclContent), 0644); err != nil {
+		t.Fatalf("Failed to write test VCL: %v", err)
+	}
+
 	config := &Config{
-		VarnishadmPort: 16082, // Use high port to avoid conflicts
+		VarnishadmPort: 0, // Dynamic port assignment
 		Secret:         "test-secret",
 		VarnishCmd:     "varnishd",
-		VCLPath:        "/tmp/test.vcl",
+		VCLPath:        vclPath,
 		VarnishConfig: &varnish.Config{
 			WorkDir:    workDir,
 			VarnishDir: workDir + "/varnish",
+			VCLPath:    vclPath,
 		},
 		Logger: logger,
 	}

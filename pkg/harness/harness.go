@@ -14,7 +14,7 @@ import (
 	"github.com/perbu/vcltest/pkg/service"
 	"github.com/perbu/vcltest/pkg/testspec"
 	"github.com/perbu/vcltest/pkg/varnish"
-	"github.com/perbu/vcltest/pkg/vclloader"
+	"github.com/perbu/vcltest/pkg/vclmod"
 )
 
 // Harness orchestrates VCL test execution.
@@ -31,6 +31,7 @@ type Harness struct {
 	testRunner     *runner.Runner
 	mockBackends   map[string]*backend.MockBackend
 	cancelServices context.CancelFunc // Cancels the service context to stop varnishd
+	transcriptFile *os.File           // varnishadm traffic log (when DebugDump enabled)
 }
 
 // New creates a new test harness with the given configuration.
@@ -86,26 +87,27 @@ func (h *Harness) Run(ctx context.Context) (*Result, error) {
 		defer h.cleanupTempDirs()
 	}
 
-	// Start services
-	if err := h.startServices(ctx, hasScenarioTests); err != nil {
-		return nil, err
-	}
-	defer h.stopServices() // Stop varnishd and recorder when done
-
-	// Start backends
-	backendAddresses, err := h.startBackends(tests)
+	// === NEW SIMPLIFIED STARTUP FLOW ===
+	// 1. Start backends FIRST (need addresses for VCL modification)
+	backendAddresses, err := h.startBackendsEarly(tests)
 	if err != nil {
 		return nil, err
 	}
 	defer stopAllBackends(h.mockBackends, h.logger)
 
-	// Load VCL
-	if err := h.loadVCL(vclPath, backendAddresses); err != nil {
+	// 2. Prepare VCL with modified backend addresses and write to workdir
+	modifiedVCLPath, err := h.prepareVCL(vclPath, backendAddresses)
+	if err != nil {
 		return nil, err
 	}
-	defer h.testRunner.UnloadVCL()
 
-	// Run tests
+	// 3. Start services with the modified VCL
+	if err := h.startServices(ctx, modifiedVCLPath, hasScenarioTests); err != nil {
+		return nil, err
+	}
+	defer h.stopServices() // Stop varnishd and recorder when done
+
+	// Run tests (VCL is already loaded at startup, no need for LoadVCL/UnloadVCL)
 	result := h.runTests(tests)
 
 	// Create debug dump if enabled
@@ -168,18 +170,18 @@ func (h *Harness) stopServices() {
 		h.cancelServices()
 	}
 
+	// Close transcript file if open
+	if h.transcriptFile != nil {
+		h.transcriptFile.Close()
+		h.transcriptFile = nil
+	}
+
 	// Brief wait to allow process to terminate
 	time.Sleep(100 * time.Millisecond)
 }
 
-// startServices starts varnishd and varnishadm.
-func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) error {
-	// Find empty.vcl for initial boot
-	emptyVCLPath, err := h.findEmptyVCL()
-	if err != nil {
-		return err
-	}
-
+// startServices starts varnishd and varnishadm with the prepared VCL.
+func (h *Harness) startServices(ctx context.Context, vclPath string, hasScenarioTests bool) error {
 	// Create service configuration
 	// VarnishadmPort: 0 means "use any available port" (dynamic assignment)
 	// AdminPort: 0 will be updated by service.Manager after Listen()
@@ -188,11 +190,11 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 		VarnishadmPort: 0, // Dynamic port assignment
 		Secret:         "test-secret",
 		VarnishCmd:     "varnishd",
-		VCLPath:        emptyVCLPath,
+		VCLPath:        vclPath, // Use the prepared VCL with modified backends
 		VarnishConfig: &varnish.Config{
 			WorkDir:    h.workDir,
 			VarnishDir: h.varnishDir,
-			VCLPath:    emptyVCLPath,
+			VCLPath:    vclPath, // VCL is ready at boot time
 			Varnish: varnish.VarnishConfig{
 				AdminPort: 0, // Will be set by service.Manager
 				HTTP: []varnish.HTTPConfig{
@@ -207,9 +209,22 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 	}
 
 	// Create service manager
+	var err error
 	h.manager, err = service.NewManager(serviceCfg)
 	if err != nil {
 		return fmt.Errorf("creating service manager: %w", err)
+	}
+
+	// Set up varnishadm transcript logging if debug dump is enabled
+	if h.cfg.DebugDump {
+		transcriptPath := filepath.Join(h.workDir, "varnishadm-traffic.log")
+		h.transcriptFile, err = os.Create(transcriptPath)
+		if err != nil {
+			h.logger.Warn("Failed to create varnishadm transcript file", "error", err)
+		} else {
+			h.manager.SetVarnishadmTranscript(h.transcriptFile)
+			h.logger.Debug("Varnishadm transcript logging enabled", "path", transcriptPath)
+		}
 	}
 
 	// Start services in background
@@ -254,6 +269,20 @@ func (h *Harness) startServices(ctx context.Context, hasScenarioTests bool) erro
 	h.testRunner = runner.New(varnishadm, varnishURL, h.workDir, h.logger, h.recorder)
 	h.testRunner.SetTimeController(h.manager)
 
+	// Set mock backends on the runner (they were started before services)
+	if h.mockBackends != nil {
+		h.testRunner.SetMockBackends(h.mockBackends)
+	}
+
+	// Set the VCL show result on the runner so it has trace info
+	// The VCL was loaded at boot time with name "boot"
+	vclShowResult, err := varnishadm.VCLShowStructured("boot")
+	if err != nil {
+		h.logger.Warn("Failed to get VCL structure", "error", err)
+	} else {
+		h.testRunner.SetVCLShowResult(vclShowResult)
+	}
+
 	return nil
 }
 
@@ -295,56 +324,72 @@ func (h *Harness) waitForVarnishReady(ctx context.Context, errChan <-chan error)
 	}
 }
 
-// findEmptyVCL locates the empty.vcl file needed for initial boot.
-func (h *Harness) findEmptyVCL() (string, error) {
-	// Try relative to current directory first
-	candidates := []string{
-		"examples/empty.vcl",
-		"../examples/empty.vcl",
-		"../../examples/empty.vcl",
-	}
-
-	for _, candidate := range candidates {
-		absPath, err := filepath.Abs(candidate)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(absPath); err == nil {
-			return absPath, nil
-		}
-	}
-
-	// Try relative to executable
-	execPath, err := os.Executable()
-	if err == nil {
-		execDir := filepath.Dir(execPath)
-		candidate := filepath.Join(execDir, "examples", "empty.vcl")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("cannot find examples/empty.vcl - run from project root or install properly")
-}
-
-// startBackends starts all mock backends.
-func (h *Harness) startBackends(tests []testspec.TestSpec) (map[string]vclloader.BackendAddress, error) {
+// startBackendsEarly starts all mock backends before VCL preparation.
+// This is called early in the startup sequence so we have backend addresses for VCL modification.
+func (h *Harness) startBackendsEarly(tests []testspec.TestSpec) (map[string]vclmod.BackendAddress, error) {
 	addresses, mockBackends, err := startAllBackends(tests, h.logger)
 	if err != nil {
 		return nil, fmt.Errorf("starting backends: %w", err)
 	}
 	h.mockBackends = mockBackends
-	h.testRunner.SetMockBackends(mockBackends)
+	// Note: testRunner is set later in startServices, so we'll set mockBackends there too
 	return addresses, nil
 }
 
-// loadVCL loads VCL into Varnish.
-func (h *Harness) loadVCL(vclPath string, backendAddresses map[string]vclloader.BackendAddress) error {
-	h.logger.Debug("Loading shared VCL", "path", vclPath)
-	if err := h.testRunner.LoadVCL(vclPath, backendAddresses); err != nil {
-		return fmt.Errorf("loading shared VCL: %w", err)
+// prepareVCL modifies the VCL with backend addresses and writes to workdir.
+// Returns the path to the modified VCL file that varnishd should load at boot.
+func (h *Harness) prepareVCL(vclPath string, backends map[string]vclmod.BackendAddress) (string, error) {
+	h.logger.Debug("Preparing VCL with backend modifications", "path", vclPath)
+
+	// Process VCL with includes - walks the include tree and modifies each file
+	processedFiles, validationResult, err := vclmod.ProcessVCLWithIncludes(vclPath, backends)
+	if err != nil {
+		// Log validation errors
+		if validationResult != nil {
+			for _, errMsg := range validationResult.Errors {
+				h.logger.Error("Backend validation failed", "error", errMsg)
+			}
+		}
+		return "", fmt.Errorf("processing VCL with includes: %w", err)
 	}
-	return nil
+
+	// Log warnings about unused backends
+	if validationResult != nil {
+		for _, warning := range validationResult.Warnings {
+			h.logger.Warn("Backend validation", "warning", warning)
+		}
+	}
+
+	// Use the vcl subdirectory of workDir - this is where Varnish's vcl_path points
+	// so relative includes will be resolved correctly
+	vclDir := filepath.Join(h.workDir, "vcl")
+
+	// Write each processed file to vclDir preserving directory structure
+	var mainVCLFile string
+	for _, file := range processedFiles {
+		// Determine output path in vclDir
+		outPath := filepath.Join(vclDir, file.RelativePath)
+
+		// Create parent directories if needed
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return "", fmt.Errorf("creating directory for %s: %w", file.RelativePath, err)
+		}
+
+		// Write the modified content
+		if err := os.WriteFile(outPath, []byte(file.Content), 0644); err != nil {
+			return "", fmt.Errorf("writing modified VCL %s: %w", file.RelativePath, err)
+		}
+
+		h.logger.Debug("Wrote modified VCL file", "path", outPath, "relative", file.RelativePath)
+
+		// Track main VCL file (the first one processed is the main file)
+		if mainVCLFile == "" {
+			mainVCLFile = outPath
+		}
+	}
+
+	h.logger.Debug("VCL prepared", "main_file", mainVCLFile, "total_files", len(processedFiles))
+	return mainVCLFile, nil
 }
 
 // configureBackendsForTest updates mock backend configurations for a specific test.

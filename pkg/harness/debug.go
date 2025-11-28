@@ -81,6 +81,12 @@ func createDebugDump(testFile, vclPath, workDir, varnishDir string, testRunner *
 		logger.Warn("Failed to copy secret file", "error", err)
 	}
 
+	// Copy varnishadm traffic log
+	transcriptPath := filepath.Join(workDir, "varnishadm-traffic.log")
+	if err := copyFile(transcriptPath, filepath.Join(dumpDir, "varnishadm-traffic.log")); err != nil {
+		logger.Debug("Varnishadm traffic log not found", "error", err)
+	}
+
 	// Create README with test run information
 	readme := fmt.Sprintf(`VCLTest Debug Dump
 ==================
@@ -98,6 +104,7 @@ Files in this directory:
 - original.vcl: The original VCL file before modification
 - modified.vcl: The VCL file with backend addresses replaced
 - varnish.log: The varnishlog output from test execution
+- varnishadm-traffic.log: Transcript of varnishadm CLI commands and responses
 - faketime.control: The libfaketime control file (if time scenarios used)
 - faketime-info.txt: Explanation of how faketime works (if time scenarios used)
 - secret: The varnishadm authentication secret

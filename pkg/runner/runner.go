@@ -125,6 +125,13 @@ func (r *Runner) SetMockBackends(backends map[string]*backend.MockBackend) {
 	r.mockBackends = backends
 }
 
+// SetVCLShowResult sets the VCL show result for trace correlation
+// This is used when VCL is loaded at boot time (new simplified flow)
+func (r *Runner) SetVCLShowResult(vclShow *varnishadm.VCLShowResult) {
+	r.vclShowResult = vclShow
+	r.loadedVCLName = "boot" // Mark as loaded
+}
+
 // parseDuration parses a duration string like "0s", "30s", "2m" into time.Duration
 func parseDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
@@ -259,11 +266,6 @@ func (r *Runner) extractVCLFiles(vclShow *varnishadm.VCLShowResult, execByConfig
 	var files []VCLFileInfo
 
 	for _, entry := range vclShow.Entries {
-		// Skip builtin VCL
-		if entry.Filename == "<builtin>" {
-			continue
-		}
-
 		executedLines := execByConfig[entry.ConfigID]
 
 		// Debug: log traced lines

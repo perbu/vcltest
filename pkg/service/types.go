@@ -1,13 +1,11 @@
 package service
 
 import (
+	"io"
 	"log/slog"
 
-	"github.com/borud/broker"
-	"github.com/perbu/vcltest/pkg/cache"
 	"github.com/perbu/vcltest/pkg/varnish"
 	"github.com/perbu/vcltest/pkg/varnishadm"
-	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
 // Config holds the configuration for the service manager
@@ -18,7 +16,7 @@ type Config struct {
 	Secret string
 	// VarnishCmd is the path to the varnishd executable (empty for PATH lookup)
 	VarnishCmd string
-	// VCLPath is the path to the VCL file to load
+	// VCLPath is the path to the VCL file to load (must be prepared with backend addresses)
 	VCLPath string
 	// VarnishConfig contains the varnish-specific configuration
 	VarnishConfig *varnish.Config
@@ -29,10 +27,16 @@ type Config struct {
 // Manager orchestrates the lifecycle of varnishadm and varnish services
 type Manager struct {
 	config         *Config
-	broker         *broker.Broker
 	varnishadm     varnishadm.VarnishadmInterface
 	varnishManager *varnish.Manager
-	vclLoader      *vclloader.Loader
-	cacheStarter   *cache.Starter
 	logger         *slog.Logger
+}
+
+// SetVarnishadmTranscript sets a writer for recording varnishadm CLI traffic.
+// This is only effective if the underlying varnishadm is a *Server (not a mock).
+// Call this before Start() to capture all traffic including authentication.
+func (m *Manager) SetVarnishadmTranscript(w io.Writer) {
+	if server, ok := m.varnishadm.(*varnishadm.Server); ok {
+		server.SetTranscriptWriter(w)
+	}
 }

@@ -68,7 +68,7 @@ func checkResponseExpectations(exp *testspec.ResponseExpectations, response *cli
 			result.Passed = false
 			bodyPreview := truncateBody(response.Body, 500)
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("Response body should contain %q, but doesn't.\n  Actual body: %s", exp.BodyContains, bodyPreview))
+				fmt.Sprintf("Response body should contain \"%s\", but doesn't.\n  Actual body: %s", exp.BodyContains, bodyPreview))
 		}
 	}
 }
@@ -209,15 +209,16 @@ func formatBackendCalls(calls map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
-// truncateBody returns a truncated version of the body for error messages
+// truncateBody returns a truncated version of the body for error messages.
+// Returns the body as-is (no escaping) for readability, wrapped in quotes.
 func truncateBody(body string, maxLen int) string {
 	if body == "" {
 		return "(empty)"
 	}
 	if len(body) <= maxLen {
-		return fmt.Sprintf("%q", body)
+		return "\"" + body + "\""
 	}
-	return fmt.Sprintf("%q... (truncated, %d bytes total)", body[:maxLen], len(body))
+	return "\"" + body[:maxLen] + "\"... (truncated, " + fmt.Sprintf("%d", len(body)) + " bytes total)"
 }
 
 // checkCookieExpectations validates expected cookies against the cookie jar

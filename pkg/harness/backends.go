@@ -3,10 +3,12 @@ package harness
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 
 	"github.com/perbu/vcltest/pkg/backend"
 	"github.com/perbu/vcltest/pkg/testspec"
-	"github.com/perbu/vcltest/pkg/vclloader"
+	"github.com/perbu/vcltest/pkg/vclmod"
 )
 
 // convertRoutes converts testspec routes to backend routes.
@@ -30,8 +32,8 @@ func convertRoutes(routes map[string]testspec.RouteSpec) map[string]backend.Rout
 // startAllBackends starts all mock backends needed across all tests.
 // It collects backend configurations from all tests and starts a mock backend
 // for each unique backend name (using the first test's configuration for that backend).
-func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[string]vclloader.BackendAddress, map[string]*backend.MockBackend, error) {
-	addresses := make(map[string]vclloader.BackendAddress)
+func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[string]vclmod.BackendAddress, map[string]*backend.MockBackend, error) {
+	addresses := make(map[string]vclmod.BackendAddress)
 	mockBackends := make(map[string]*backend.MockBackend)
 
 	// Collect backend configurations from all tests
@@ -75,18 +77,31 @@ func startAllBackends(tests []testspec.TestSpec, logger *slog.Logger) (map[strin
 			return nil, nil, fmt.Errorf("starting backend %q: %w", name, err)
 		}
 
-		host, port, err := vclloader.ParseAddress(addr)
+		host, port, err := parseAddress(addr)
 		if err != nil {
 			stopAllBackends(mockBackends, logger)
 			return nil, nil, fmt.Errorf("parsing address for backend %q: %w", name, err)
 		}
 
 		mockBackends[name] = mock
-		addresses[name] = vclloader.BackendAddress{Host: host, Port: port}
+		addresses[name] = vclmod.BackendAddress{Host: host, Port: port}
 		logger.Debug("Started shared backend", "name", name, "address", addr, "body_len", len(spec.Body), "echo_request", spec.EchoRequest)
 	}
 
 	return addresses, mockBackends, nil
+}
+
+// parseAddress parses a "host:port" string into host and port components.
+func parseAddress(addr string) (string, string, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid address %q: %w", addr, err)
+	}
+	// Validate port is a number
+	if _, err := strconv.Atoi(portStr); err != nil {
+		return "", "", fmt.Errorf("invalid port in address %q: %w", addr, err)
+	}
+	return host, portStr, nil
 }
 
 // stopAllBackends stops all mock backends.

@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/borud/broker"
-	"github.com/perbu/vcltest/pkg/cache"
 	"github.com/perbu/vcltest/pkg/varnish"
 	"github.com/perbu/vcltest/pkg/varnishadm"
-	"github.com/perbu/vcltest/pkg/vclloader"
 )
 
 // NewManager creates a new service manager with the given configuration
@@ -30,11 +27,8 @@ func NewManager(config *Config) (*Manager, error) {
 		return nil, fmt.Errorf("VCL path cannot be empty")
 	}
 
-	// Create event broker
-	broker := broker.New(broker.Config{})
-
-	// Create varnishadm server with broker
-	varnishadmServer := varnishadm.New(config.VarnishadmPort, config.Secret, config.Logger, broker)
+	// Create varnishadm server (no broker needed - simplified flow)
+	varnishadmServer := varnishadm.New(config.VarnishadmPort, config.Secret, config.Logger, nil)
 
 	// Create varnish manager
 	varnishManager := varnish.New(
@@ -43,33 +37,19 @@ func NewManager(config *Config) (*Manager, error) {
 		config.VarnishConfig.VarnishDir,
 	)
 
-	// Create VCL loader
-	vclLoader := vclloader.New(varnishadmServer, broker, config.VCLPath, config.Logger)
-
-	// Create cache starter
-	cacheStarter := cache.New(varnishadmServer, broker, config.Logger)
-
 	return &Manager{
 		config:         config,
-		broker:         broker,
 		varnishadm:     varnishadmServer,
 		varnishManager: varnishManager,
-		vclLoader:      vclLoader,
-		cacheStarter:   cacheStarter,
 		logger:         config.Logger,
 	}, nil
 }
 
-// Start starts the varnishadm server and varnish daemon in order
-// This method blocks until either service fails or the context is cancelled
+// Start starts the varnishadm server and varnish daemon in order.
+// VCL must be prepared (with backend addresses modified) and passed via config.VCLPath.
+// Varnishd will load the VCL at boot time - no event-driven loading needed.
+// This method blocks until either service fails or the context is cancelled.
 func (m *Manager) Start(ctx context.Context) error {
-	// Start event listeners
-	m.logger.Debug("Starting VCL loader event listener")
-	m.vclLoader.Start()
-
-	m.logger.Debug("Starting cache starter event listener")
-	m.cacheStarter.Start()
-
 	// Create error channel to receive errors from goroutines
 	errCh := make(chan error, 2)
 
@@ -98,10 +78,11 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	// Build varnish command-line arguments
+	// VCL is loaded at boot time via -f flag (no dynamic loading)
 	args := varnish.BuildArgs(m.config.VarnishConfig)
 
 	// Start varnish in a goroutine
-	m.logger.Debug("Starting varnish daemon", "cmd", m.config.VarnishCmd)
+	m.logger.Debug("Starting varnish daemon", "cmd", m.config.VarnishCmd, "vcl", m.config.VCLPath)
 	go func() {
 		if err := m.varnishManager.Start(ctx, m.config.VarnishCmd, args, &m.config.VarnishConfig.Varnish.Time); err != nil {
 			errCh <- fmt.Errorf("varnish daemon failed: %w", err)
@@ -131,11 +112,6 @@ func (m *Manager) GetVarnishManager() *varnish.Manager {
 	return m.varnishManager
 }
 
-// GetCacheStarter returns the cache starter (for accessing VCL mapping)
-func (m *Manager) GetCacheStarter() *cache.Starter {
-	return m.cacheStarter
-}
-
 // AdvanceTimeBy advances the fake time to testStartTime + offset (if faketime is enabled)
 // offset is relative to test start (t0), e.g., 5*time.Second means "5 seconds after test start"
 // Returns error if time control is not enabled
@@ -152,11 +128,40 @@ func (m *Manager) GetHTTPPort() (int, error) {
 		return 0, fmt.Errorf("failed to get listen addresses: %w", err)
 	}
 
-	// Find first HTTP (TCP) socket - port > 0 means TCP, -1 means Unix socket
+	// When Varnish binds to :0 (dynamic port), it creates separate IPv4 and IPv6 listeners
+	// with DIFFERENT ports. Since we connect to 127.0.0.1 (IPv4), we must use the IPv4 port.
+	// IPv4 addresses: 0.0.0.0 or specific IPv4 like 127.0.0.1
+	// IPv6 addresses: :: or specific IPv6 like ::1
+	var ipv4Port, fallbackPort int
 	for _, addr := range addresses {
-		if addr.Port > 0 {
-			return addr.Port, nil
+		if addr.Port <= 0 {
+			continue // Skip Unix sockets
+		}
+		// Check for IPv4 - does not contain ':' (IPv6 addresses always have colons)
+		if !containsColon(addr.Address) {
+			ipv4Port = addr.Port
+			break // Prefer first IPv4 address
+		}
+		if fallbackPort == 0 {
+			fallbackPort = addr.Port // Keep first TCP port as fallback
 		}
 	}
+
+	if ipv4Port > 0 {
+		return ipv4Port, nil
+	}
+	if fallbackPort > 0 {
+		return fallbackPort, nil
+	}
 	return 0, fmt.Errorf("no HTTP listen address found in %d addresses", len(addresses))
+}
+
+// containsColon checks if a string contains a colon character
+func containsColon(s string) bool {
+	for _, c := range s {
+		if c == ':' {
+			return true
+		}
+	}
+	return false
 }

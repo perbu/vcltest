@@ -16,6 +16,7 @@ func AnalyzeVCL(source string, vclPath string) (*FileBlocks, error) {
 	root, err := parser.Parse(source, vclPath,
 		parser.WithResolveIncludes(vclDir),
 		parser.WithSkipSubroutineValidation(true),
+		parser.WithAllowMissingVersion(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing VCL: %w", err)

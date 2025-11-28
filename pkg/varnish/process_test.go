@@ -81,6 +81,7 @@ func TestBuildArgs(t *testing.T) {
 	cfg := &Config{
 		WorkDir:     "/tmp/test",
 		VarnishDir:  "/tmp/test/varnish",
+		VCLPath:     "/tmp/test/vcl/test.vcl", // VCL path is required in new flow
 		StorageArgs: []string{"-s", "malloc,256m"},
 		Varnish: VarnishConfig{
 			AdminPort: 6082,
@@ -94,7 +95,7 @@ func TestBuildArgs(t *testing.T) {
 	args := BuildArgs(cfg)
 
 	// Check some expected arguments
-	expectedArgs := []string{"-n", cfg.VarnishDir, "-d", "-f", "", "-a", ":8080,http", "--debug"}
+	expectedArgs := []string{"-n", cfg.VarnishDir, "-F", "-f", cfg.VCLPath, "-a", ":8080,http", "--debug"}
 
 	for _, expected := range expectedArgs {
 		found := false

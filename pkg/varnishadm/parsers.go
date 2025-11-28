@@ -261,10 +261,8 @@ func parseVCLShow(payload string) (*VCLShowResult, error) {
 		}
 		result.Entries = append(result.Entries, entry)
 
-		// Add to ConfigMap if not builtin
-		if filename != "<builtin>" {
-			result.ConfigMap[configID] = filename
-		}
+		// Add to ConfigMap (including builtin - it's VCL like any other)
+		result.ConfigMap[configID] = filename
 
 		// Move past the content
 		pos = contentEnd

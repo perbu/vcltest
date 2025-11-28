@@ -284,7 +284,7 @@ func TestExtractVCLFiles(t *testing.T) {
 			},
 		},
 		{
-			name: "builtin VCL is skipped",
+			name: "builtin VCL is included",
 			vclShow: func() *varnishadm.VCLShowResult {
 				file1 := "vcl 4.1;\n"
 				builtin := "// builtin content\n"
@@ -312,12 +312,14 @@ func TestExtractVCLFiles(t *testing.T) {
 						},
 					},
 					ConfigMap: map[int]string{
+						0: "<builtin>",
 						1: "/tmp/test.vcl",
 						2: "/tmp/other.vcl",
 					},
 				}
 			}(),
 			execByConfig: map[int][]int{
+				0: {1},
 				1: {1},
 				2: {1},
 			},
@@ -326,6 +328,12 @@ func TestExtractVCLFiles(t *testing.T) {
 					ConfigID:      1,
 					Filename:      "/tmp/test.vcl",
 					Source:        "vcl 4.1;\n",
+					ExecutedLines: []int{1},
+				},
+				{
+					ConfigID:      0,
+					Filename:      "<builtin>",
+					Source:        "// builtin content\n",
 					ExecutedLines: []int{1},
 				},
 				{

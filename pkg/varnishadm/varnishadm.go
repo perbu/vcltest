@@ -32,6 +32,7 @@ type Server struct {
 	bannerReceived bool         // Tracks if banner has been read for this connection
 	environment    string       // Stores the environment line (e.g., "Darwin,24.6.0,arm64,-jnone,-smse4,-sdefault,-hcritbit")
 	version        string       // Stores the Varnish version (e.g., "varnish-7.7.3")
+	transcript     io.Writer    // Optional writer for recording CLI traffic (for debugging)
 }
 
 // VarnishResponse is a type the maps the response
@@ -200,6 +201,9 @@ func (v *Server) readBanner(c *net.TCPConn) error {
 		return fmt.Errorf("failed to read authentication challenge: %w", err)
 	}
 
+	// Log the authentication challenge (redact the actual challenge for security)
+	v.writeTranscript("<<<", statusCode, "<auth challenge>")
+
 	// Expect authentication challenge (status 107)
 	if statusCode != ClisAuth {
 		return fmt.Errorf("expected authentication challenge (status %d), got status %d: %s", ClisAuth, statusCode, strings.Trim(payload, "\n"))
@@ -271,6 +275,28 @@ func (v *Server) GetVersion() string {
 	return v.version
 }
 
+// SetTranscriptWriter sets an optional writer for recording CLI traffic.
+// When set, all commands and responses are logged for debugging purposes.
+// The transcript format is: "TIMESTAMP DIR STATUS LENGTH CONTENT"
+// where DIR is ">>>" for sent commands and "<<<" for received responses.
+func (v *Server) SetTranscriptWriter(w io.Writer) {
+	v.transcript = w
+}
+
+// writeTranscript writes a line to the transcript if enabled
+func (v *Server) writeTranscript(direction string, status int, content string) {
+	if v.transcript == nil {
+		return
+	}
+	timestamp := time.Now().Format(time.RFC3339Nano)
+	// Escape newlines for readability but keep content intact
+	escapedContent := strings.ReplaceAll(content, "\n", "\\n")
+	if len(escapedContent) > 500 {
+		escapedContent = escapedContent[:500] + fmt.Sprintf("... (%d bytes total)", len(content))
+	}
+	fmt.Fprintf(v.transcript, "%s %s %d %d %s\n", timestamp, direction, status, len(content), escapedContent)
+}
+
 // parseBanner extracts environment and version information from Varnish CLI banner
 func parseBanner(banner string) (environment, version string) {
 	// Extract environment line (e.g., "Linux,6.8.0-79-generic,x86_64,-jlinux,-smse4,-hcritbit")
@@ -318,6 +344,13 @@ func (v *Server) run(c *net.TCPConn, cmd string) (out VarnishResponse, err error
 	writeBuffer.WriteString(cmd)
 	writeBuffer.WriteString(NewLine)
 
+	// Log sent command (mask auth responses for security)
+	cmdForLog := cmd
+	if strings.HasPrefix(cmd, "auth ") {
+		cmdForLog = "auth <redacted>"
+	}
+	v.writeTranscript(">>>", 0, cmdForLog)
+
 	// Set deadline for write operation
 	deadline := time.Now().Add(readWriteTimeout)
 	if err := c.SetDeadline(deadline); err != nil {
@@ -340,6 +373,10 @@ func (v *Server) run(c *net.TCPConn, cmd string) (out VarnishResponse, err error
 
 	// Read response with timeout
 	out.payload, out.statusCode, err = v.readFromConnection(c, readWriteTimeout)
+
+	// Log received response
+	v.writeTranscript("<<<", out.statusCode, out.payload)
+
 	return out, err
 }
 

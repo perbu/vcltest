@@ -22,14 +22,11 @@ func BuildArgs(cfg *Config) []string {
 	args = append(args, "-S", secretPath) // Enable auth on the CLI with secret file
 	args = append(args, "-M", fmt.Sprintf("localhost:%d", cfg.Varnish.AdminPort))
 	args = append(args, "-n", cfg.VarnishDir)
-	args = append(args, "-d") // Debug mode (implies -F, enables debug CLI commands like debug.listen_address)
+	args = append(args, "-F") // Foreground mode - stays running, debug.listen_address works
 
-	// Add VCL file if specified, otherwise empty VCL will be loaded via varnishadm
-	if cfg.VCLPath != "" {
-		args = append(args, "-f", cfg.VCLPath)
-	} else {
-		args = append(args, "-f", "")
-	}
+	// Add VCL file - VCL is prepared with modified backends before varnishd starts
+	// In normal operation, VCLPath must always be set
+	args = append(args, "-f", cfg.VCLPath)
 
 	// HTTP listening addresses
 	for _, http := range cfg.Varnish.HTTP {
